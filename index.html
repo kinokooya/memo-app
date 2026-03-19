@@ -555,7 +555,10 @@ async function mergePR(prNumber, btnEl) {
     }
     btnEl.textContent = 'マージ完了';
     btnEl.style.background = '#3fb950';
-    setTimeout(refresh, 1500);
+    btnEl.disabled = true;
+    // 即座にPR表示を更新し、少し待ってから再取得
+    btnEl.closest('.pr-item').style.opacity = '0.4';
+    setTimeout(refresh, 2000);
   } catch (e) {
     btnEl.textContent = 'エラー';
     btnEl.style.background = '#f85149';
