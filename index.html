@@ -230,6 +230,32 @@
     color: #8b949e;
     margin-top: 4px;
   }
+  .read-later-item .actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .btn-done {
+    background: #238636;
+    border-color: #238636;
+    font-size: 12px;
+    padding: 4px 10px;
+  }
+  .btn-delete {
+    background: #da3633;
+    border-color: #da3633;
+    font-size: 12px;
+    padding: 4px 10px;
+  }
+  /* 感想入力モーダル */
+  .impression-modal .modal {
+    width: 95%;
+    max-width: 450px;
+  }
+  .impression-modal textarea {
+    height: 15vh;
+    margin-top: 8px;
+  }
 </style>
 </head>
 <body>
@@ -288,6 +314,19 @@
     </div>
     <div class="read-later-body" id="readLaterBody">
       <span class="status">読み込み中...</span>
+    </div>
+  </div>
+</div>
+
+<!-- 感想入力モーダル -->
+<div class="modal-overlay impression-modal" id="impressionModal" style="display:none">
+  <div class="modal">
+    <h2>感想を記録</h2>
+    <p id="impressionTarget"></p>
+    <textarea id="impressionText" placeholder="読んだ感想・気づき（空欄でもOK）"></textarea>
+    <div class="modal-actions">
+      <button class="btn" onclick="cancelImpression()">キャンセル</button>
+      <button class="btn btn-primary" id="impressionSubmitBtn" onclick="submitImpression()">既読にする</button>
     </div>
   </div>
 </div>
@@ -353,6 +392,49 @@ function saveToken() {
 }
 
 // --- 後で読む ---
+var readLaterData = { content: '', sha: '', items: [] };
+var pendingImpressionIndex = -1;
+
+function parseReadLaterItems(content) {
+  var unreadMatch = content.match(/## 未読\n([\s\S]*?)(?=\n## |$)/);
+  if (!unreadMatch || !unreadMatch[1].trim()) return [];
+  return unreadMatch[1].split(/\n- /).filter(function(s) { return s.trim(); }).map(function(item) {
+    var lines = item.trim().split('\n');
+    var firstLine = lines[0];
+    var linkMatch = firstLine.match(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/);
+    var url, title;
+    if (linkMatch) {
+      title = linkMatch[1];
+      url = linkMatch[2];
+    } else {
+      var urlMatch = firstLine.match(/(https?:\/\/\S+)/);
+      url = urlMatch ? urlMatch[0] : '';
+      title = '';
+    }
+    var note = lines.slice(1).map(function(l) { return l.trim(); }).filter(function(l) { return l; }).join(' ');
+    if (!title && note) { title = note; note = ''; }
+    return { raw: '- ' + item.trim(), url: url, title: title, note: note };
+  });
+}
+
+function renderReadLaterList() {
+  var body = document.getElementById('readLaterBody');
+  if (readLaterData.items.length === 0) {
+    body.innerHTML = '<span class="status">未読の記事はありません</span>';
+    return;
+  }
+  body.innerHTML = readLaterData.items.map(function(item, idx) {
+    var html = '<div class="read-later-item" id="rl-item-' + idx + '">';
+    html += '<a href="' + escapeHtml(item.url) + '" target="_blank" rel="noopener">' + escapeHtml(item.title || item.url) + '</a>';
+    if (item.note) html += '<div class="note">' + escapeHtml(item.note) + '</div>';
+    html += '<div class="actions">';
+    html += '<button class="btn btn-done" onclick="markAsRead(' + idx + ')">読んだ</button>';
+    html += '<button class="btn btn-delete" onclick="deleteReadLater(' + idx + ')">削除</button>';
+    html += '</div></div>';
+    return html;
+  }).join('');
+}
+
 async function showReadLater() {
   document.getElementById('readLaterModal').style.display = 'flex';
   var body = document.getElementById('readLaterBody');
@@ -365,38 +447,10 @@ async function showReadLater() {
     if (res.status === 401) { showPatExpired(); throw new Error('PATの期限が切れています'); }
     if (!res.ok) throw new Error(res.status);
     var data = await res.json();
-    var content = decodeURIComponent(escape(atob(data.content)));
-    // 未読セクションをパース
-    var unreadMatch = content.match(/## 未読\n([\s\S]*?)(?=\n## |$)/);
-    if (!unreadMatch || !unreadMatch[1].trim()) {
-      body.innerHTML = '<span class="status">未読の記事はありません</span>';
-      return;
-    }
-    var items = unreadMatch[1].split(/\n- /).filter(function(s) { return s.trim(); });
-    body.innerHTML = items.map(function(item) {
-      var lines = item.trim().split('\n');
-      var firstLine = lines[0];
-      // [title](url) 形式
-      var linkMatch = firstLine.match(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/);
-      var url, title;
-      if (linkMatch) {
-        title = linkMatch[1];
-        url = linkMatch[2];
-      } else {
-        // URL直書き形式
-        var urlMatch = firstLine.match(/(https?:\/\/\S+)/);
-        url = urlMatch ? urlMatch[0] : '';
-        title = '';
-      }
-      // 2行目以降がメモ
-      var note = lines.slice(1).map(function(l) { return l.trim(); }).filter(function(l) { return l; }).join(' ');
-      if (!title && note) { title = note; note = ''; }
-      var html = '<div class="read-later-item">';
-      html += '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">' + escapeHtml(title || url) + '</a>';
-      if (note) html += '<div class="note">' + escapeHtml(note) + '</div>';
-      html += '</div>';
-      return html;
-    }).join('');
+    readLaterData.content = decodeURIComponent(escape(atob(data.content)));
+    readLaterData.sha = data.sha;
+    readLaterData.items = parseReadLaterItems(readLaterData.content);
+    renderReadLaterList();
   } catch (e) {
     body.innerHTML = '<span class="status error">読み込みエラー: ' + escapeHtml(e.message) + '</span>';
   }
@@ -404,6 +458,104 @@ async function showReadLater() {
 
 function closeReadLater() {
   document.getElementById('readLaterModal').style.display = 'none';
+}
+
+function markAsRead(idx) {
+  pendingImpressionIndex = idx;
+  var item = readLaterData.items[idx];
+  document.getElementById('impressionTarget').textContent = item.title || item.url;
+  document.getElementById('impressionText').value = '';
+  document.getElementById('impressionModal').style.display = 'flex';
+}
+
+function cancelImpression() {
+  document.getElementById('impressionModal').style.display = 'none';
+  pendingImpressionIndex = -1;
+}
+
+async function submitImpression() {
+  var idx = pendingImpressionIndex;
+  if (idx < 0) return;
+  var impression = document.getElementById('impressionText').value.trim();
+  var btn = document.getElementById('impressionSubmitBtn');
+  btn.disabled = true;
+  btn.textContent = '保存中...';
+  try {
+    await updateReadLaterFile('read', idx, impression);
+    document.getElementById('impressionModal').style.display = 'none';
+    pendingImpressionIndex = -1;
+    renderReadLaterList();
+  } catch (e) {
+    alert('保存失敗: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '既読にする';
+  }
+}
+
+async function deleteReadLater(idx) {
+  if (!confirm('この記事を削除しますか？')) return;
+  var el = document.getElementById('rl-item-' + idx);
+  var btns = el.querySelectorAll('button');
+  btns.forEach(function(b) { b.disabled = true; });
+  try {
+    await updateReadLaterFile('delete', idx, '');
+    renderReadLaterList();
+  } catch (e) {
+    alert('削除失敗: ' + e.message);
+    btns.forEach(function(b) { b.disabled = false; });
+  }
+}
+
+async function updateReadLaterFile(action, idx, impression) {
+  var item = readLaterData.items[idx];
+  var content = readLaterData.content;
+
+  // 未読セクションから該当アイテムを除去
+  content = content.replace(item.raw + '\n', '').replace(item.raw, '');
+  // 連続する空行を整理
+  content = content.replace(/## 未読\n\n\n+/g, '## 未読\n\n');
+
+  if (action === 'read') {
+    // 既読セクションに追記
+    var now = new Date();
+    var pad = function(n) { return String(n).padStart(2, '0'); };
+    var dateStr = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
+    var entry = '- ' + (item.title ? '[' + item.title + '](' + item.url + ')' : item.url);
+    entry += ' (' + dateStr + ')';
+    if (impression) entry += '\n  感想: ' + impression;
+    // ## 既読 の直後に追記
+    if (content.indexOf('## 既読\n') !== -1) {
+      content = content.replace('## 既読\n', '## 既読\n\n' + entry + '\n');
+    } else {
+      content = content.trimEnd() + '\n\n## 既読\n\n' + entry + '\n';
+    }
+  }
+
+  // GitHub APIでファイル更新
+  var encoded = btoa(unescape(encodeURIComponent(content)));
+  var res = await fetch(
+    API + '/repos/' + OWNER + '/' + REPO + '/contents/notes/read-later.md',
+    {
+      method: 'PUT',
+      headers: headers(),
+      body: JSON.stringify({
+        message: action === 'read' ? 'update: read-later 既読に移動' : 'update: read-later 記事削除',
+        content: encoded,
+        sha: readLaterData.sha
+      })
+    }
+  );
+  if (res.status === 401) { showPatExpired(); throw new Error('PATの期限が切れています'); }
+  if (!res.ok) {
+    var err = await res.json();
+    throw new Error(err.message || res.status);
+  }
+  var result = await res.json();
+  // shaとデータを更新
+  readLaterData.sha = result.content.sha;
+  readLaterData.content = content;
+  readLaterData.items.splice(idx, 1);
 }
 
 // --- メモ投稿 ---
