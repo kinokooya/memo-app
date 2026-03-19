@@ -297,6 +297,16 @@
     white-space: nowrap;
   }
   .todo-item .todo-due.overdue { color: #f85149; }
+  .btn-todo-delete {
+    background: none;
+    border: none;
+    color: #6e7681;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+  }
+  .btn-todo-delete:active { color: #f85149; }
   .todo-add-form {
     display: flex;
     gap: 8px;
@@ -764,6 +774,7 @@ function renderTodoList() {
       html += '<input type="checkbox" onchange="completeTodo(\'due\',' + i + ')">';
       html += '<span class="todo-text">' + escapeHtml(t.text) + '</span>';
       if (t.due) html += '<span class="todo-due' + overdue + '">' + escapeHtml(t.due) + '</span>';
+      html += '<button class="btn-todo-delete" onclick="deleteTodo(\'due\',' + i + ')">&times;</button>';
       html += '</div>';
     });
   }
@@ -774,6 +785,7 @@ function renderTodoList() {
       html += '<div class="todo-item">';
       html += '<input type="checkbox" onchange="completeTodo(\'anytime\',' + i + ')">';
       html += '<span class="todo-text">' + escapeHtml(t.text) + '</span>';
+      html += '<button class="btn-todo-delete" onclick="deleteTodo(\'anytime\',' + i + ')">&times;</button>';
       html += '</div>';
     });
   }
@@ -789,6 +801,7 @@ function renderTodoList() {
       html += '<input type="checkbox" checked onchange="undoTodo(' + i + ')">';
       html += '<span class="todo-text" style="text-decoration:line-through">' + escapeHtml(t.text) + '</span>';
       if (t.doneDate) html += '<span class="todo-due">' + escapeHtml(t.doneDate) + '</span>';
+      html += '<button class="btn-todo-delete" onclick="deleteTodo(\'done\',' + i + ')">&times;</button>';
       html += '</div>';
     });
   }
@@ -878,6 +891,20 @@ async function undoTodo(idx) {
   } else {
     todoData.anyTimeTasks.push(task);
   }
+  renderTodoList();
+  try {
+    await saveTodoFile();
+  } catch (e) {
+    alert('保存失敗: ' + e.message);
+    showTodo();
+  }
+}
+
+async function deleteTodo(section, idx) {
+  if (!confirm('このタスクを削除しますか？')) return;
+  if (section === 'due') todoData.dueTasks.splice(idx, 1);
+  else if (section === 'anytime') todoData.anyTimeTasks.splice(idx, 1);
+  else todoData.doneTasks.splice(idx, 1);
   renderTodoList();
   try {
     await saveTodoFile();
