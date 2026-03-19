@@ -339,7 +339,6 @@
 <header>
   <h1>Knowledge Base</h1>
   <div style="display:flex;gap:8px">
-    <button class="btn btn-sm" onclick="showTodo()">ToDo</button>
     <button class="btn btn-sm" onclick="showReadLater()">後で読む</button>
     <button class="btn btn-sm" onclick="showTokenModal()">PAT設定</button>
   </div>
@@ -382,10 +381,15 @@
   <div id="prList"><span class="status">読み込み中...</span></div>
 </div>
 
-<!-- 未完了ToDo -->
+<!-- ToDo -->
 <div class="card">
   <h2>ToDo</h2>
-  <div id="todoSummary"></div>
+  <div id="todoBody"></div>
+  <div class="todo-add-form">
+    <input type="text" id="todoNewText" placeholder="新しいタスク">
+    <input type="date" id="todoNewDue">
+    <button class="btn btn-primary btn-sm" onclick="addTodo()">追加</button>
+  </div>
 </div>
 
 <!-- 後で読むモーダル -->
@@ -414,23 +418,6 @@
   </div>
 </div>
 
-<!-- ToDoモーダル -->
-<div class="modal-overlay todo-modal" id="todoModal" style="display:none">
-  <div class="modal">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <h2>ToDo</h2>
-      <button class="btn btn-sm" onclick="closeTodo()">閉じる</button>
-    </div>
-    <div class="todo-body" id="todoBody">
-      <span class="status">読み込み中...</span>
-    </div>
-    <div class="todo-add-form">
-      <input type="text" id="todoNewText" placeholder="新しいタスク">
-      <input type="date" id="todoNewDue">
-      <button class="btn btn-primary btn-sm" onclick="addTodo()">追加</button>
-    </div>
-  </div>
-</div>
 
 <!-- PAT入力モーダル -->
 <div class="modal-overlay" id="tokenModal" style="display:none">
@@ -751,7 +738,7 @@ function saveTodoToStorage() {
   // 完了タスクは直近5件のみ保持
   todoData.doneTasks = todoData.doneTasks.slice(0, 5);
   localStorage.setItem('todo_data', JSON.stringify(todoData));
-  renderTodoSummary();
+  renderTodoList();
 }
 
 function todayStr() {
@@ -810,24 +797,15 @@ function renderTodoList() {
     });
   }
 
-  // エクスポート/インポートボタン
-  html += '<div style="display:flex;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid #30363d">';
-  html += '<button class="btn btn-sm" style="font-size:11px" onclick="exportTodo()">エクスポート</button>';
-  html += '<button class="btn btn-sm" style="font-size:11px" onclick="importTodo()">インポート</button>';
+  // エクスポート/インポート
+  html += '<div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">';
+  html += '<button class="btn btn-sm" style="font-size:11px;opacity:0.5" onclick="exportTodo()">export</button>';
+  html += '<button class="btn btn-sm" style="font-size:11px;opacity:0.5" onclick="importTodo()">import</button>';
   html += '</div>';
 
   body.innerHTML = html;
 }
 
-function showTodo() {
-  document.getElementById('todoModal').style.display = 'flex';
-  loadTodoFromStorage();
-  renderTodoList();
-}
-
-function closeTodo() {
-  document.getElementById('todoModal').style.display = 'none';
-}
 
 function completeTodo(section, idx) {
   var task;
@@ -883,26 +861,6 @@ function addTodo() {
   renderTodoList();
   textEl.value = '';
   dueEl.value = '';
-}
-
-function renderTodoSummary() {
-  loadTodoFromStorage();
-  var el = document.getElementById('todoSummary');
-  var tasks = todoData.dueTasks.concat(todoData.anyTimeTasks);
-  if (tasks.length === 0) {
-    el.innerHTML = '<span class="status">未完了タスクはありません</span>';
-    return;
-  }
-  var html = '';
-  tasks.forEach(function(t) {
-    var dateStr = t.due || t.createdAt || '';
-    var overdue = isOverdue(t.due) ? ' overdue' : '';
-    html += '<div class="todo-item">';
-    html += '<span class="todo-text">' + escapeHtml(t.text) + '</span>';
-    if (dateStr) html += '<span class="todo-due' + overdue + '">' + escapeHtml(dateStr) + '</span>';
-    html += '</div>';
-  });
-  el.innerHTML = html;
 }
 
 function exportTodo() {
@@ -1234,7 +1192,8 @@ async function refresh() {
 
 async function init() {
   await migrateTodoFromGitHub();
-  renderTodoSummary();
+  loadTodoFromStorage();
+  renderTodoList();
   refresh();
 }
 
