@@ -510,12 +510,15 @@ async function mergePR(prNumber, btnEl) {
       var data = await res.json();
       throw new Error(data.message || res.status);
     }
-    btnEl.textContent = 'マージ完了';
-    btnEl.style.background = '#3fb950';
-    btnEl.disabled = true;
-    // 即座にPR表示を更新し、少し待ってから再取得
-    btnEl.closest('.pr-item').style.opacity = '0.4';
-    setTimeout(refresh, 2000);
+    // マージ成功 → DOMから即削除
+    var prItem = btnEl.closest('.pr-item');
+    prItem.remove();
+    // 残りのPRがなければメッセージ表示
+    var prList = document.getElementById('prList');
+    if (!prList.querySelector('.pr-item')) {
+      prList.innerHTML = '<span class="status">inbox処理のオープンPRはありません</span>';
+    }
+    fetchInboxCount();
   } catch (e) {
     btnEl.textContent = 'エラー';
     btnEl.style.background = '#f85149';
