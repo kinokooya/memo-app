@@ -784,9 +784,9 @@ function renderTodoList() {
 
   if (todoData.doneTasks.length > 0) {
     html += '<div class="todo-section-title">完了（直近' + todoData.doneTasks.length + '件）</div>';
-    todoData.doneTasks.forEach(function(t) {
+    todoData.doneTasks.forEach(function(t, i) {
       html += '<div class="todo-item" style="opacity:0.5">';
-      html += '<input type="checkbox" checked disabled>';
+      html += '<input type="checkbox" checked onchange="undoTodo(' + i + ')">';
       html += '<span class="todo-text" style="text-decoration:line-through">' + escapeHtml(t.text) + '</span>';
       if (t.doneDate) html += '<span class="todo-due">' + escapeHtml(t.doneDate) + '</span>';
       html += '</div>';
@@ -864,7 +864,26 @@ async function completeTodo(section, idx) {
     await saveTodoFile();
   } catch (e) {
     alert('保存失敗: ' + e.message);
-    showTodo(); // リロード
+    showTodo();
+  }
+}
+
+async function undoTodo(idx) {
+  var task = todoData.doneTasks.splice(idx, 1)[0];
+  task.checked = false;
+  task.doneDate = '';
+  if (task.due) {
+    todoData.dueTasks.push(task);
+    todoData.dueTasks.sort(function(a, b) { return (a.due || '9999') < (b.due || '9999') ? -1 : 1; });
+  } else {
+    todoData.anyTimeTasks.push(task);
+  }
+  renderTodoList();
+  try {
+    await saveTodoFile();
+  } catch (e) {
+    alert('保存失敗: ' + e.message);
+    showTodo();
   }
 }
 
