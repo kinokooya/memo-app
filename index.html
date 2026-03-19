@@ -482,6 +482,16 @@ async function submitImpression() {
   btn.textContent = '保存中...';
   try {
     await updateReadLaterFile('read', idx, impression);
+    // 感想があればinboxにもメモとして投稿
+    if (impression) {
+      var item = readLaterData.items[idx];
+      var title = item.title || item.url;
+      var inboxMemo = '# 読んだ記事の感想\n\n';
+      inboxMemo += '記事: ' + (item.title ? '[' + item.title + '](' + item.url + ')' : item.url) + '\n\n';
+      if (item.note) inboxMemo += '元メモ: ' + item.note + '\n\n';
+      inboxMemo += '感想: ' + impression;
+      await postToInbox(inboxMemo);
+    }
     document.getElementById('impressionModal').style.display = 'none';
     pendingImpressionIndex = -1;
     renderReadLaterList();
@@ -504,6 +514,34 @@ async function deleteReadLater(idx) {
   } catch (e) {
     alert('削除失敗: ' + e.message);
     btns.forEach(function(b) { b.disabled = false; });
+  }
+}
+
+async function postToInbox(memoContent) {
+  var now = new Date();
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  var ts = now.getFullYear() + '-'
+    + pad(now.getMonth()+1) + '-'
+    + pad(now.getDate()) + '-'
+    + pad(now.getHours())
+    + pad(now.getMinutes())
+    + pad(now.getSeconds());
+  var encoded = btoa(unescape(encodeURIComponent(memoContent)));
+  var res = await fetch(
+    API + '/repos/' + OWNER + '/' + REPO + '/contents/inbox/' + ts + '.md',
+    {
+      method: 'PUT',
+      headers: headers(),
+      body: JSON.stringify({
+        message: 'add: 読んだ記事の感想',
+        content: encoded
+      })
+    }
+  );
+  if (res.status === 401) { showPatExpired(); throw new Error('PATの期限が切れています'); }
+  if (!res.ok) {
+    var err = await res.json();
+    throw new Error(err.message || res.status);
   }
 }
 
