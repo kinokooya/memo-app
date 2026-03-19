@@ -202,13 +202,44 @@
     justify-content: flex-end;
     margin-top: 12px;
   }
+  /* 後で読むモーダル */
+  .read-later-modal .modal {
+    width: 95%;
+    max-width: 500px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .read-later-body {
+    overflow-y: auto;
+    flex: 1;
+    margin-top: 12px;
+  }
+  .read-later-body a {
+    color: #58a6ff;
+    text-decoration: none;
+    word-break: break-all;
+  }
+  .read-later-item {
+    border-bottom: 1px solid #21262d;
+    padding: 10px 0;
+  }
+  .read-later-item:last-child { border-bottom: none; }
+  .read-later-item .note {
+    font-size: 0.85em;
+    color: #8b949e;
+    margin-top: 4px;
+  }
 </style>
 </head>
 <body>
 
 <header>
   <h1>Knowledge Base</h1>
-  <button class="btn btn-sm" onclick="showTokenModal()">PAT設定</button>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-sm" onclick="showReadLater()">後で読む</button>
+    <button class="btn btn-sm" onclick="showTokenModal()">PAT設定</button>
+  </div>
 </header>
 
 <!-- PAT期限切れバナー -->
@@ -246,6 +277,19 @@
 <div class="card">
   <h2>オープンPR</h2>
   <div id="prList"><span class="status">読み込み中...</span></div>
+</div>
+
+<!-- 後で読むモーダル -->
+<div class="modal-overlay read-later-modal" id="readLaterModal" style="display:none">
+  <div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2>後で読む</h2>
+      <button class="btn btn-sm" onclick="closeReadLater()">閉じる</button>
+    </div>
+    <div class="read-later-body" id="readLaterBody">
+      <span class="status">読み込み中...</span>
+    </div>
+  </div>
 </div>
 
 <!-- PAT入力モーダル -->
@@ -306,6 +350,60 @@ function saveToken() {
   closeTokenModal();
   hidePatExpired();
   init();
+}
+
+// --- 後で読む ---
+async function showReadLater() {
+  document.getElementById('readLaterModal').style.display = 'flex';
+  var body = document.getElementById('readLaterBody');
+  body.innerHTML = '<span class="status">読み込み中...</span>';
+  try {
+    var res = await fetch(
+      API + '/repos/' + OWNER + '/' + REPO + '/contents/notes/read-later.md',
+      { headers: headers() }
+    );
+    if (res.status === 401) { showPatExpired(); throw new Error('PATの期限が切れています'); }
+    if (!res.ok) throw new Error(res.status);
+    var data = await res.json();
+    var content = decodeURIComponent(escape(atob(data.content)));
+    // 未読セクションをパース
+    var unreadMatch = content.match(/## 未読\n([\s\S]*?)(?=\n## |$)/);
+    if (!unreadMatch || !unreadMatch[1].trim()) {
+      body.innerHTML = '<span class="status">未読の記事はありません</span>';
+      return;
+    }
+    var items = unreadMatch[1].split(/\n- /).filter(function(s) { return s.trim(); });
+    body.innerHTML = items.map(function(item) {
+      var lines = item.trim().split('\n');
+      var firstLine = lines[0];
+      // [title](url) 形式
+      var linkMatch = firstLine.match(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/);
+      var url, title;
+      if (linkMatch) {
+        title = linkMatch[1];
+        url = linkMatch[2];
+      } else {
+        // URL直書き形式
+        var urlMatch = firstLine.match(/(https?:\/\/\S+)/);
+        url = urlMatch ? urlMatch[0] : '';
+        title = '';
+      }
+      // 2行目以降がメモ
+      var note = lines.slice(1).map(function(l) { return l.trim(); }).filter(function(l) { return l; }).join(' ');
+      if (!title && note) { title = note; note = ''; }
+      var html = '<div class="read-later-item">';
+      html += '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">' + escapeHtml(title || url) + '</a>';
+      if (note) html += '<div class="note">' + escapeHtml(note) + '</div>';
+      html += '</div>';
+      return html;
+    }).join('');
+  } catch (e) {
+    body.innerHTML = '<span class="status error">読み込みエラー: ' + escapeHtml(e.message) + '</span>';
+  }
+}
+
+function closeReadLater() {
+  document.getElementById('readLaterModal').style.display = 'none';
 }
 
 // --- メモ投稿 ---
