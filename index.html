@@ -121,19 +121,6 @@
   }
   .memo-actions .btn { flex: 1; text-align: center; }
 
-  /* Inbox */
-  .inbox-count {
-    font-size: 2em;
-    font-weight: bold;
-    color: #58a6ff;
-  }
-  .inbox-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-  .workflow-status { margin-top: 8px; }
 
   .status {
     font-size: 0.85em;
@@ -374,20 +361,6 @@
   <div class="memo-status" id="memoStatus"></div>
 </div>
 
-<!-- Inbox管理 -->
-<div class="card">
-  <h2>Inbox</h2>
-  <div class="inbox-row">
-    <div>
-      <span class="inbox-count" id="inboxCount">-</span>
-      <span style="color:#8b949e"> 件</span>
-    </div>
-    <button class="btn btn-primary" id="processBtn" onclick="triggerProcess()" disabled>
-      inbox処理
-    </button>
-  </div>
-  <div class="workflow-status" id="workflowStatus"></div>
-</div>
 
 <!-- ToDo -->
 <div class="card">
@@ -996,7 +969,6 @@ function submitMemo() {
       document.getElementById('xpostUrl').value = '';
       document.getElementById('xpostQuote').value = '';
       document.getElementById('xpostMemo').value = '';
-      fetchInboxCount();
     } else {
       return res.json().then(function(err) {
         showMemoStatus('エラー ' + res.status + ': ' + err.message, 'error');
@@ -1012,87 +984,6 @@ function submitMemo() {
   });
 }
 
-// --- inbox件数取得 ---
-async function fetchInboxCount() {
-  var el = document.getElementById('inboxCount');
-  var btn = document.getElementById('processBtn');
-  try {
-    var res = await fetch(API + '/repos/' + OWNER + '/' + REPO + '/contents/inbox', { headers: headers() });
-    if (!res.ok) throw new Error(res.status);
-    var files = await res.json();
-    var mdFiles = files.filter(function(f) { return f.name.endsWith('.md') && f.name !== '.gitkeep'; });
-    el.textContent = mdFiles.length;
-    btn.disabled = mdFiles.length === 0;
-  } catch (e) {
-    el.textContent = '?';
-    btn.disabled = true;
-    if (e.message === '401') showPatExpired();
-  }
-}
-
-// --- inbox処理トリガー ---
-async function triggerProcess() {
-  var btn = document.getElementById('processBtn');
-  var status = document.getElementById('workflowStatus');
-  btn.disabled = true;
-  btn.textContent = '起動中...';
-  status.innerHTML = '';
-
-  try {
-    var res = await fetch(
-      API + '/repos/' + OWNER + '/' + REPO + '/actions/workflows/inbox-process.yml/dispatches',
-      {
-        method: 'POST',
-        headers: headers(),
-        body: JSON.stringify({ ref: 'main' })
-      }
-    );
-    if (res.status === 401) {
-      showPatExpired();
-      status.innerHTML = '<span class="status error">PATの期限が切れています</span>';
-      btn.textContent = 'inbox処理';
-      btn.disabled = false;
-      return;
-    }
-    if (!res.ok) {
-      var text = await res.text();
-      throw new Error(res.status + ': ' + text);
-    }
-    status.innerHTML = '<span class="status success">ワークフローを起動しました。完了まで少しお待ちください。</span>';
-    btn.textContent = 'inbox処理';
-    startPolling();
-  } catch (e) {
-    status.innerHTML = '<span class="status error">エラー: ' + escapeHtml(e.message) + '</span>';
-    btn.textContent = 'inbox処理';
-    btn.disabled = false;
-  }
-}
-
-// --- ポーリング（inbox件数更新） ---
-var pollTimer = null;
-function startPolling() {
-  var count = 0;
-  var prevCount = document.getElementById('inboxCount').textContent;
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(async function() {
-    count++;
-    await fetchInboxCount();
-    var newCount = document.getElementById('inboxCount').textContent;
-    // inbox件数が減ったら処理完了
-    if (newCount !== prevCount && newCount !== '?') {
-      clearInterval(pollTimer);
-      pollTimer = null;
-      document.getElementById('processBtn').disabled = false;
-      document.getElementById('workflowStatus').innerHTML = '<span class="status success">処理完了！</span>';
-      return;
-    }
-    if (count >= 30) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-      document.getElementById('processBtn').disabled = false;
-    }
-  }, 10000);
-}
 
 // --- ユーティリティ ---
 function escapeHtml(str) {
@@ -1101,15 +992,10 @@ function escapeHtml(str) {
   return d.innerHTML;
 }
 
-async function refresh() {
-  await fetchInboxCount();
-}
-
 async function init() {
   await migrateTodoFromGitHub();
   loadTodoFromStorage();
   renderTodoList();
-  refresh();
 }
 
 // --- 初期化 ---
@@ -1119,7 +1005,6 @@ document.addEventListener('DOMContentLoaded', function() {
   } else {
     init();
   }
-  setInterval(refresh, 60000);
 });
 </script>
 
