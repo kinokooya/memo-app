@@ -361,6 +361,8 @@
   </div>
   <!-- Xポストモード -->
   <div id="xpostMode" style="display:none" class="x-post-fields">
+    <div class="field-label">ポストURL（任意）</div>
+    <input type="url" id="xpostUrl" placeholder="https://x.com/..." style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid #30363d;background:#0d1117;color:#e6edf3;font-size:14px;">
     <div class="field-label">ポスト内容（コピペ）</div>
     <textarea id="xpostQuote" placeholder="Xのポスト内容を貼り付け"></textarea>
     <div class="field-label">自分のメモ（任意）</div>
@@ -939,8 +941,9 @@ function submitMemo() {
       showMemoStatus('ポスト内容を入力してください', 'error');
       return;
     }
+    var xpostUrl = document.getElementById('xpostUrl').value.trim();
     var userMemo = document.getElementById('xpostMemo').value.trim();
-    fullMemo = '---\ntype: x_post\n---\n\n## 引用\n\n' + quote;
+    fullMemo = '---\ntype: x_post\n' + (xpostUrl ? 'url: ' + xpostUrl + '\n' : '') + '---\n\n## 引用\n\n' + quote;
     if (userMemo) {
       fullMemo += '\n\n## メモ\n\n' + userMemo;
     }
@@ -990,6 +993,7 @@ function submitMemo() {
     if (res.status === 201) {
       showMemoStatus('投稿成功: inbox/' + ts + '.md', 'success');
       document.getElementById('memo').value = '';
+      document.getElementById('xpostUrl').value = '';
       document.getElementById('xpostQuote').value = '';
       document.getElementById('xpostMemo').value = '';
       fetchInboxCount();
