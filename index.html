@@ -42,12 +42,6 @@
     opacity: 0.6;
     cursor: not-allowed;
   }
-  .btn-merge {
-    background: #8957e5;
-    border-color: #8957e5;
-    font-size: 13px;
-    padding: 6px 12px;
-  }
   .btn-sm {
     font-size: 12px;
     padding: 4px 10px;
@@ -141,34 +135,6 @@
   }
   .workflow-status { margin-top: 8px; }
 
-  /* PR */
-  .pr-item {
-    border-bottom: 1px solid #21262d;
-    padding: 12px 0;
-  }
-  .pr-item:last-child { border-bottom: none; }
-  .pr-title {
-    font-weight: 600;
-    margin-bottom: 6px;
-    font-size: 0.95em;
-  }
-  .pr-body {
-    font-size: 0.85em;
-    color: #8b949e;
-    white-space: pre-wrap;
-    margin-bottom: 8px;
-    overflow-x: auto;
-  }
-  .pr-body table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.9em;
-  }
-  .pr-body th, .pr-body td {
-    border: 1px solid #30363d;
-    padding: 4px 8px;
-    text-align: left;
-  }
   .status {
     font-size: 0.85em;
     color: #8b949e;
@@ -419,12 +385,6 @@
     </button>
   </div>
   <div class="workflow-status" id="workflowStatus"></div>
-</div>
-
-<!-- オープンPR -->
-<div class="card">
-  <h2>オープンPR</h2>
-  <div id="prList"><span class="status">読み込み中...</span></div>
 </div>
 
 <!-- ToDo -->
@@ -1094,7 +1054,7 @@ async function triggerProcess() {
       var text = await res.text();
       throw new Error(res.status + ': ' + text);
     }
-    status.innerHTML = '<span class="status success">ワークフローを起動しました。PRが作成されるまでお待ちください。</span>';
+    status.innerHTML = '<span class="status success">ワークフローを起動しました。完了まで少しお待ちください。</span>';
     btn.textContent = 'inbox処理';
     startPolling();
   } catch (e) {
@@ -1104,121 +1064,30 @@ async function triggerProcess() {
   }
 }
 
-// --- ポーリング ---
+// --- ポーリング（inbox件数更新） ---
 var pollTimer = null;
 function startPolling() {
   var count = 0;
+  var prevCount = document.getElementById('inboxCount').textContent;
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(async function() {
     count++;
-    await fetchPRs();
+    await fetchInboxCount();
+    var newCount = document.getElementById('inboxCount').textContent;
+    // inbox件数が減ったら処理完了
+    if (newCount !== prevCount && newCount !== '?') {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      document.getElementById('processBtn').disabled = false;
+      document.getElementById('workflowStatus').innerHTML = '<span class="status success">処理完了！</span>';
+      return;
+    }
     if (count >= 30) {
       clearInterval(pollTimer);
       pollTimer = null;
       document.getElementById('processBtn').disabled = false;
     }
   }, 10000);
-}
-
-// --- PR一覧取得 ---
-async function fetchPRs() {
-  var el = document.getElementById('prList');
-  try {
-    var res = await fetch(
-      API + '/repos/' + OWNER + '/' + REPO + '/pulls?state=open&sort=created&direction=desc&per_page=10',
-      { headers: headers() }
-    );
-    if (res.status === 401) { showPatExpired(); throw new Error(res.status); }
-    if (!res.ok) throw new Error(res.status);
-    var prs = await res.json();
-    var inboxPRs = prs.filter(function(pr) { return pr.head.ref.startsWith('inbox-process/'); });
-
-    if (inboxPRs.length === 0) {
-      el.innerHTML = '<span class="status">inbox処理のオープンPRはありません</span>';
-      return;
-    }
-
-    el.innerHTML = inboxPRs.map(function(pr) {
-      return '<div class="pr-item">' +
-        '<div class="pr-title">#' + pr.number + ' ' + escapeHtml(pr.title) + '</div>' +
-        '<div class="pr-body">' + renderPRBody(pr.body || '') + '</div>' +
-        '<div style="display:flex;gap:8px;margin-top:8px">' +
-        '<button class="btn btn-merge" onclick="mergePR(' + pr.number + ', this)">マージ</button>' +
-        '<button class="btn" style="background:#da3633;border-color:#da3633;font-size:13px;padding:6px 12px" onclick="closePR(' + pr.number + ', this)">却下</button>' +
-        '</div></div>';
-    }).join('');
-
-    if (inboxPRs.length > 0 && pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-      document.getElementById('processBtn').disabled = false;
-    }
-  } catch (e) {
-    el.innerHTML = '<span class="status error">PR取得エラー: ' + escapeHtml(e.message) + '</span>';
-  }
-}
-
-// --- PRマージ ---
-async function mergePR(prNumber, btnEl) {
-  btnEl.disabled = true;
-  btnEl.textContent = 'マージ中...';
-  try {
-    var res = await fetch(
-      API + '/repos/' + OWNER + '/' + REPO + '/pulls/' + prNumber + '/merge',
-      {
-        method: 'PUT',
-        headers: headers(),
-        body: JSON.stringify({ merge_method: 'squash' })
-      }
-    );
-    if (res.status === 401) { showPatExpired(); throw new Error('PATの期限が切れています'); }
-    if (!res.ok) {
-      var data = await res.json();
-      throw new Error(data.message || res.status);
-    }
-    // マージ成功 → DOMから即削除
-    var prItem = btnEl.closest('.pr-item');
-    prItem.remove();
-    // 残りのPRがなければメッセージ表示
-    var prList = document.getElementById('prList');
-    if (!prList.querySelector('.pr-item')) {
-      prList.innerHTML = '<span class="status">inbox処理のオープンPRはありません</span>';
-    }
-    fetchInboxCount();
-  } catch (e) {
-    btnEl.textContent = 'エラー';
-    btnEl.style.background = '#f85149';
-    alert('マージ失敗: ' + e.message);
-  }
-}
-
-// --- PR却下 ---
-async function closePR(prNumber, btnEl) {
-  if (!confirm('このPRを却下しますか？\ninboxのファイルはそのまま残ります。')) return;
-  btnEl.disabled = true;
-  btnEl.textContent = '却下中...';
-  try {
-    var res = await fetch(
-      API + '/repos/' + OWNER + '/' + REPO + '/pulls/' + prNumber,
-      {
-        method: 'PATCH',
-        headers: headers(),
-        body: JSON.stringify({ state: 'closed' })
-      }
-    );
-    if (res.status === 401) { showPatExpired(); throw new Error('PATの期限が切れています'); }
-    if (!res.ok) {
-      var data = await res.json();
-      throw new Error(data.message || res.status);
-    }
-    btnEl.textContent = '却下済み';
-    btnEl.style.background = '#6e7681';
-    setTimeout(refresh, 1500);
-  } catch (e) {
-    btnEl.textContent = 'エラー';
-    btnEl.style.background = '#f85149';
-    alert('却下失敗: ' + e.message);
-  }
 }
 
 // --- ユーティリティ ---
@@ -1228,40 +1097,8 @@ function escapeHtml(str) {
   return d.innerHTML;
 }
 
-function renderPRBody(body) {
-  var lines = body.split('\n');
-  var html = '';
-  var inTable = false;
-  var isHeaderRow = true;
-
-  for (var idx = 0; idx < lines.length; idx++) {
-    var trimmed = lines[idx].trim();
-    if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
-      if (trimmed.match(/^\|[\s\-|]+\|$/)) continue;
-      if (!inTable) {
-        html += '<table>';
-        inTable = true;
-        isHeaderRow = true;
-      }
-      var cells = trimmed.split('|').filter(function(_, i, a) { return i > 0 && i < a.length - 1; });
-      var tag = isHeaderRow ? 'th' : 'td';
-      html += '<tr>' + cells.map(function(c) { return '<' + tag + '>' + escapeHtml(c.trim()) + '</' + tag + '>'; }).join('') + '</tr>';
-      isHeaderRow = false;
-    } else {
-      if (inTable) { html += '</table>'; inTable = false; }
-      if (trimmed.startsWith('## ')) {
-        html += '<strong>' + escapeHtml(trimmed.slice(3)) + '</strong><br>';
-      } else if (trimmed) {
-        html += escapeHtml(trimmed) + '<br>';
-      }
-    }
-  }
-  if (inTable) html += '</table>';
-  return html;
-}
-
 async function refresh() {
-  await Promise.all([fetchInboxCount(), fetchPRs()]);
+  await fetchInboxCount();
 }
 
 async function init() {
