@@ -520,8 +520,10 @@ async function fetchPRs() {
       return '<div class="pr-item">' +
         '<div class="pr-title">#' + pr.number + ' ' + escapeHtml(pr.title) + '</div>' +
         '<div class="pr-body">' + renderPRBody(pr.body || '') + '</div>' +
+        '<div style="display:flex;gap:8px;margin-top:8px">' +
         '<button class="btn btn-merge" onclick="mergePR(' + pr.number + ', this)">マージ</button>' +
-        '</div>';
+        '<button class="btn" style="background:#da3633;border-color:#da3633;font-size:13px;padding:6px 12px" onclick="closePR(' + pr.number + ', this)">却下</button>' +
+        '</div></div>';
     }).join('');
 
     if (inboxPRs.length > 0 && pollTimer) {
@@ -558,6 +560,34 @@ async function mergePR(prNumber, btnEl) {
     btnEl.textContent = 'エラー';
     btnEl.style.background = '#f85149';
     alert('マージ失敗: ' + e.message);
+  }
+}
+
+// --- PR却下 ---
+async function closePR(prNumber, btnEl) {
+  if (!confirm('このPRを却下しますか？\ninboxのファイルはそのまま残ります。')) return;
+  btnEl.disabled = true;
+  btnEl.textContent = '却下中...';
+  try {
+    var res = await fetch(
+      API + '/repos/' + OWNER + '/' + REPO + '/pulls/' + prNumber,
+      {
+        method: 'PATCH',
+        headers: headers(),
+        body: JSON.stringify({ state: 'closed' })
+      }
+    );
+    if (!res.ok) {
+      var data = await res.json();
+      throw new Error(data.message || res.status);
+    }
+    btnEl.textContent = '却下済み';
+    btnEl.style.background = '#6e7681';
+    setTimeout(refresh, 1500);
+  } catch (e) {
+    btnEl.textContent = 'エラー';
+    btnEl.style.background = '#f85149';
+    alert('却下失敗: ' + e.message);
   }
 }
 
