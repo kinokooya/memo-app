@@ -165,15 +165,15 @@ function loadDomains() {
 }
 
 // domain-index.mdのテーブルからドメイン名を抽出
+// テーブル形式: | ドメイン(日本語) | フォルダ | 説明 |
 function parseDomains(md) {
   var lines = md.split('\n');
   var domains = [];
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].trim();
-    // テーブル行: | domain | 説明 | ... |
     if (line.startsWith('|') && !line.startsWith('|---') && !line.startsWith('| ドメイン')) {
       var cols = line.split('|').map(function(c) { return c.trim(); });
-      // cols[0]は空、cols[1]がドメイン名
+      // cols[0]は空、cols[1]がドメイン名（日本語）
       if (cols[1] && cols[1] !== '' && cols[1] !== 'ドメイン') {
         domains.push(cols[1]);
       }
