@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knowledge Base</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0d1117;
+    color: #e6edf3;
+    min-height: 100vh;
+    padding: 16px;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #30363d;
+    margin-bottom: 20px;
+  }
+  h1 { font-size: 1.2em; }
+  .btn {
+    display: inline-block;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid #30363d;
+    background: #21262d;
+    color: #e6edf3;
+    font-size: 14px;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .btn:active { background: #30363d; }
+  .btn-primary {
+    background: #238636;
+    border-color: #238636;
+  }
+  .btn-primary:disabled {
+    background: #1a5c2a;
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .btn-merge {
+    background: #8957e5;
+    border-color: #8957e5;
+    font-size: 13px;
+    padding: 6px 12px;
+  }
+  .btn-sm {
+    font-size: 12px;
+    padding: 4px 10px;
+  }
+  .card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 1em;
+    margin-bottom: 12px;
+    color: #8b949e;
+  }
+  .inbox-count {
+    font-size: 2em;
+    font-weight: bold;
+    color: #58a6ff;
+  }
+  .inbox-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .pr-item {
+    border-bottom: 1px solid #21262d;
+    padding: 12px 0;
+  }
+  .pr-item:last-child { border-bottom: none; }
+  .pr-title {
+    font-weight: 600;
+    margin-bottom: 6px;
+    font-size: 0.95em;
+  }
+  .pr-body {
+    font-size: 0.85em;
+    color: #8b949e;
+    white-space: pre-wrap;
+    margin-bottom: 8px;
+    overflow-x: auto;
+  }
+  .pr-body table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+  }
+  .pr-body th, .pr-body td {
+    border: 1px solid #30363d;
+    padding: 4px 8px;
+    text-align: left;
+  }
+  .status {
+    font-size: 0.85em;
+    color: #8b949e;
+    padding: 8px 0;
+  }
+  .status.success { color: #3fb950; }
+  .status.error { color: #f85149; }
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .modal {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 24px;
+    width: 90%;
+    max-width: 400px;
+  }
+  .modal h2 { margin-bottom: 12px; }
+  .modal input {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid #30363d;
+    background: #0d1117;
+    color: #e6edf3;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+  .modal p {
+    font-size: 0.85em;
+    color: #8b949e;
+    margin-bottom: 12px;
+  }
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 12px;
+  }
+  .loading { opacity: 0.5; }
+  .workflow-status {
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Knowledge Base</h1>
+  <button class="btn btn-sm" onclick="showTokenModal()">PAT設定</button>
+</header>
+
+<div class="card">
+  <h2>Inbox</h2>
+  <div class="inbox-row">
+    <div>
+      <span class="inbox-count" id="inboxCount">-</span>
+      <span style="color:#8b949e"> 件</span>
+    </div>
+    <button class="btn btn-primary" id="processBtn" onclick="triggerProcess()" disabled>
+      inbox処理
+    </button>
+  </div>
+  <div class="workflow-status" id="workflowStatus"></div>
+</div>
+
+<div class="card">
+  <h2>オープンPR</h2>
+  <div id="prList"><span class="status">読み込み中...</span></div>
+</div>
+
+<!-- PAT入力モーダル -->
+<div class="modal-overlay" id="tokenModal" style="display:none">
+  <div class="modal">
+    <h2>GitHub PAT設定</h2>
+    <p>Fine-grained Personal Access Tokenを入力してください。<br>
+       必要な権限: Contents(R/W), Actions(R/W), Pull requests(R/W)<br>
+       対象リポジトリ: knowledge-base</p>
+    <input type="password" id="tokenInput" placeholder="github_pat_...">
+    <div class="modal-actions">
+      <button class="btn" onclick="closeTokenModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="saveToken()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const OWNER = 'kinokooya';
+const REPO = 'knowledge-base';
+const API = 'https://api.github.com';
+
+function getToken() {
+  return localStorage.getItem('gh_pat') || '';
+}
+
+function headers() {
+  return {
+    'Authorization': `Bearer ${getToken()}`,
+    'Accept': 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28'
+  };
+}
+
+// --- PAT管理 ---
+function showTokenModal() {
+  document.getElementById('tokenModal').style.display = 'flex';
+  document.getElementById('tokenInput').value = '';
+}
+
+function closeTokenModal() {
+  document.getElementById('tokenModal').style.display = 'none';
+}
+
+function saveToken() {
+  const token = document.getElementById('tokenInput').value.trim();
+  if (!token) return;
+  localStorage.setItem('gh_pat', token);
+  closeTokenModal();
+  refresh();
+}
+
+// --- inbox件数取得 ---
+async function fetchInboxCount() {
+  const el = document.getElementById('inboxCount');
+  const btn = document.getElementById('processBtn');
+  try {
+    const res = await fetch(`${API}/repos/${OWNER}/${REPO}/contents/inbox`, { headers: headers() });
+    if (!res.ok) throw new Error(res.status);
+    const files = await res.json();
+    const mdFiles = files.filter(f => f.name.endsWith('.md') && f.name !== '.gitkeep');
+    el.textContent = mdFiles.length;
+    btn.disabled = mdFiles.length === 0;
+  } catch (e) {
+    el.textContent = '?';
+    btn.disabled = true;
+    if (e.message === '401') showTokenModal();
+  }
+}
+
+// --- inbox処理トリガー ---
+async function triggerProcess() {
+  const btn = document.getElementById('processBtn');
+  const status = document.getElementById('workflowStatus');
+  btn.disabled = true;
+  btn.textContent = '起動中...';
+  status.innerHTML = '';
+
+  try {
+    const res = await fetch(
+      `${API}/repos/${OWNER}/${REPO}/actions/workflows/inbox-process.yml/dispatches`,
+      {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ ref: 'main' })
+      }
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`${res.status}: ${text}`);
+    }
+    status.innerHTML = '<span class="status success">ワークフローを起動しました。PRが作成されるまでお待ちください。</span>';
+    btn.textContent = 'inbox処理';
+    // PRが作成されるまでポーリング
+    startPolling();
+  } catch (e) {
+    status.innerHTML = `<span class="status error">エラー: ${e.message}</span>`;
+    btn.textContent = 'inbox処理';
+    btn.disabled = false;
+  }
+}
+
+// --- ポーリング（ワークフロー完了待ち） ---
+let pollTimer = null;
+function startPolling() {
+  let count = 0;
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    count++;
+    await fetchPRs();
+    if (count >= 30) { // 最大5分（10秒×30）
+      clearInterval(pollTimer);
+      pollTimer = null;
+      document.getElementById('processBtn').disabled = false;
+    }
+  }, 10000);
+}
+
+// --- PR一覧取得 ---
+async function fetchPRs() {
+  const el = document.getElementById('prList');
+  try {
+    const res = await fetch(
+      `${API}/repos/${OWNER}/${REPO}/pulls?state=open&sort=created&direction=desc&per_page=10`,
+      { headers: headers() }
+    );
+    if (!res.ok) throw new Error(res.status);
+    const prs = await res.json();
+
+    // inbox-process ブランチのPRのみフィルタ
+    const inboxPRs = prs.filter(pr => pr.head.ref.startsWith('inbox-process/'));
+
+    if (inboxPRs.length === 0) {
+      el.innerHTML = '<span class="status">inbox処理のオープンPRはありません</span>';
+      return;
+    }
+
+    el.innerHTML = inboxPRs.map(pr => `
+      <div class="pr-item">
+        <div class="pr-title">#${pr.number} ${escapeHtml(pr.title)}</div>
+        <div class="pr-body">${renderPRBody(pr.body || '')}</div>
+        <button class="btn btn-merge" onclick="mergePR(${pr.number}, this)">マージ</button>
+      </div>
+    `).join('');
+
+    // PRが見つかったらポーリング停止 & 処理ボタン復帰
+    if (inboxPRs.length > 0 && pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      document.getElementById('processBtn').disabled = false;
+    }
+  } catch (e) {
+    el.innerHTML = `<span class="status error">PR取得エラー: ${e.message}</span>`;
+  }
+}
+
+// --- PRマージ ---
+async function mergePR(prNumber, btnEl) {
+  btnEl.disabled = true;
+  btnEl.textContent = 'マージ中...';
+  try {
+    const res = await fetch(
+      `${API}/repos/${OWNER}/${REPO}/pulls/${prNumber}/merge`,
+      {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify({ merge_method: 'squash' })
+      }
+    );
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.message || res.status);
+    }
+    btnEl.textContent = 'マージ完了';
+    btnEl.style.background = '#3fb950';
+    // リフレッシュ
+    setTimeout(refresh, 1500);
+  } catch (e) {
+    btnEl.textContent = 'エラー';
+    btnEl.style.background = '#f85149';
+    alert(`マージ失敗: ${e.message}`);
+  }
+}
+
+// --- ユーティリティ ---
+function escapeHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function renderPRBody(body) {
+  // マークダウンテーブルを簡易HTMLに変換
+  const lines = body.split('\n');
+  let html = '';
+  let inTable = false;
+  let isHeaderRow = true;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+      // テーブル区切り行はスキップ
+      if (trimmed.match(/^\|[\s-|]+\|$/)) {
+        continue;
+      }
+      if (!inTable) {
+        html += '<table>';
+        inTable = true;
+        isHeaderRow = true;
+      }
+      const cells = trimmed.split('|').filter((_, i, a) => i > 0 && i < a.length - 1);
+      const tag = isHeaderRow ? 'th' : 'td';
+      html += '<tr>' + cells.map(c => `<${tag}>${escapeHtml(c.trim())}</${tag}>`).join('') + '</tr>';
+      isHeaderRow = false;
+    } else {
+      if (inTable) {
+        html += '</table>';
+        inTable = false;
+      }
+      if (trimmed.startsWith('## ')) {
+        html += `<strong>${escapeHtml(trimmed.slice(3))}</strong><br>`;
+      } else if (trimmed) {
+        html += escapeHtml(trimmed) + '<br>';
+      }
+    }
+  }
+  if (inTable) html += '</table>';
+  return html;
+}
+
+async function refresh() {
+  await Promise.all([fetchInboxCount(), fetchPRs()]);
+}
+
+// --- 初期化 ---
+document.addEventListener('DOMContentLoaded', () => {
+  if (!getToken()) {
+    showTokenModal();
+  } else {
+    refresh();
+  }
+  // 60秒ごとに自動リフレッシュ
+  setInterval(refresh, 60000);
+});
+</script>
+
+</body>
+</html>
