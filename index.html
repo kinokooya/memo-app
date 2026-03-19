@@ -256,6 +256,72 @@
     height: 15vh;
     margin-top: 8px;
   }
+  /* ToDoモーダル */
+  .todo-modal .modal {
+    width: 95%;
+    max-width: 500px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .todo-body {
+    overflow-y: auto;
+    flex: 1;
+    margin-top: 12px;
+  }
+  .todo-section-title {
+    font-size: 0.85em;
+    color: #8b949e;
+    margin: 12px 0 6px;
+    font-weight: 600;
+  }
+  .todo-section-title:first-child { margin-top: 0; }
+  .todo-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid #21262d;
+  }
+  .todo-item:last-child { border-bottom: none; }
+  .todo-item input[type="checkbox"] {
+    margin-top: 3px;
+    accent-color: #238636;
+    width: 16px;
+    height: 16px;
+  }
+  .todo-item .todo-text { flex: 1; font-size: 0.9em; }
+  .todo-item .todo-due {
+    font-size: 0.75em;
+    color: #8b949e;
+    white-space: nowrap;
+  }
+  .todo-item .todo-due.overdue { color: #f85149; }
+  .todo-add-form {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #30363d;
+  }
+  .todo-add-form input[type="text"] {
+    flex: 1;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #30363d;
+    background: #0d1117;
+    color: #e6edf3;
+    font-size: 14px;
+  }
+  .todo-add-form input[type="date"] {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid #30363d;
+    background: #0d1117;
+    color: #e6edf3;
+    font-size: 13px;
+    width: 130px;
+  }
 </style>
 </head>
 <body>
@@ -263,6 +329,7 @@
 <header>
   <h1>Knowledge Base</h1>
   <div style="display:flex;gap:8px">
+    <button class="btn btn-sm" onclick="showTodo()">ToDo</button>
     <button class="btn btn-sm" onclick="showReadLater()">後で読む</button>
     <button class="btn btn-sm" onclick="showTokenModal()">PAT設定</button>
   </div>
@@ -327,6 +394,24 @@
     <div class="modal-actions">
       <button class="btn" onclick="cancelImpression()">キャンセル</button>
       <button class="btn btn-primary" id="impressionSubmitBtn" onclick="submitImpression()">既読にする</button>
+    </div>
+  </div>
+</div>
+
+<!-- ToDoモーダル -->
+<div class="modal-overlay todo-modal" id="todoModal" style="display:none">
+  <div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2>ToDo</h2>
+      <button class="btn btn-sm" onclick="closeTodo()">閉じる</button>
+    </div>
+    <div class="todo-body" id="todoBody">
+      <span class="status">読み込み中...</span>
+    </div>
+    <div class="todo-add-form">
+      <input type="text" id="todoNewText" placeholder="新しいタスク">
+      <input type="date" id="todoNewDue">
+      <button class="btn btn-primary btn-sm" onclick="addTodo()">追加</button>
     </div>
   </div>
 </div>
@@ -594,6 +679,218 @@ async function updateReadLaterFile(action, idx, impression) {
   readLaterData.sha = result.content.sha;
   readLaterData.content = content;
   readLaterData.items.splice(idx, 1);
+}
+
+// --- ToDo ---
+var todoData = { content: '', sha: '', dueTasks: [], anyTimeTasks: [], doneTasks: [] };
+
+function parseTodoItems(content) {
+  var due = [], anyTime = [], done = [];
+  var section = '';
+  content.split('\n').forEach(function(line) {
+    if (line.match(/^## 期限あり/)) { section = 'due'; return; }
+    if (line.match(/^## いつでも/)) { section = 'anytime'; return; }
+    if (line.match(/^## 完了/)) { section = 'done'; return; }
+    if (line.match(/^---/) || line.match(/^# ToDo/)) return;
+    var taskMatch = line.match(/^- \[([ x])\] (.+)/);
+    if (!taskMatch) return;
+    var checked = taskMatch[1] === 'x';
+    var text = taskMatch[2];
+    var dueMatch = text.match(/\(due: (\d{4}-\d{2}-\d{2})\)/);
+    var doneMatch = text.match(/\(done: (\d{4}-\d{2}-\d{2})\)/);
+    var item = {
+      raw: line,
+      text: text.replace(/\s*\(due: \d{4}-\d{2}-\d{2}\)/, '').replace(/\s*\(done: \d{4}-\d{2}-\d{2}\)/, '').trim(),
+      due: dueMatch ? dueMatch[1] : '',
+      doneDate: doneMatch ? doneMatch[1] : '',
+      checked: checked
+    };
+    if (section === 'done' || checked) done.push(item);
+    else if (section === 'due') due.push(item);
+    else if (section === 'anytime') anyTime.push(item);
+  });
+  return { due: due, anyTime: anyTime, done: done };
+}
+
+function buildTodoContent() {
+  var lines = [
+    '---',
+    'tags: [todo, タスク管理]',
+    'last_updated: ' + todayStr(),
+    '---',
+    '# ToDo',
+    '',
+    '## 期限あり',
+    ''
+  ];
+  todoData.dueTasks.forEach(function(t) {
+    lines.push('- [ ] ' + t.text + (t.due ? ' (due: ' + t.due + ')' : ''));
+  });
+  lines.push('', '## いつでも', '');
+  todoData.anyTimeTasks.forEach(function(t) {
+    lines.push('- [ ] ' + t.text);
+  });
+  lines.push('', '## 完了', '');
+  // 直近5件のみ保持
+  var trimmed = todoData.doneTasks.slice(0, 5);
+  todoData.doneTasks = trimmed;
+  trimmed.forEach(function(t) {
+    lines.push('- [x] ' + t.text + (t.doneDate ? ' (done: ' + t.doneDate + ')' : ''));
+  });
+  lines.push('');
+  return lines.join('\n');
+}
+
+function todayStr() {
+  var now = new Date();
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  return now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
+}
+
+function isOverdue(dueStr) {
+  if (!dueStr) return false;
+  return dueStr < todayStr();
+}
+
+function renderTodoList() {
+  var body = document.getElementById('todoBody');
+  var html = '';
+
+  if (todoData.dueTasks.length > 0) {
+    html += '<div class="todo-section-title">期限あり</div>';
+    todoData.dueTasks.forEach(function(t, i) {
+      var overdue = isOverdue(t.due) ? ' overdue' : '';
+      html += '<div class="todo-item">';
+      html += '<input type="checkbox" onchange="completeTodo(\'due\',' + i + ')">';
+      html += '<span class="todo-text">' + escapeHtml(t.text) + '</span>';
+      if (t.due) html += '<span class="todo-due' + overdue + '">' + escapeHtml(t.due) + '</span>';
+      html += '</div>';
+    });
+  }
+
+  if (todoData.anyTimeTasks.length > 0) {
+    html += '<div class="todo-section-title">いつでも</div>';
+    todoData.anyTimeTasks.forEach(function(t, i) {
+      html += '<div class="todo-item">';
+      html += '<input type="checkbox" onchange="completeTodo(\'anytime\',' + i + ')">';
+      html += '<span class="todo-text">' + escapeHtml(t.text) + '</span>';
+      html += '</div>';
+    });
+  }
+
+  if (todoData.dueTasks.length === 0 && todoData.anyTimeTasks.length === 0) {
+    html += '<span class="status">タスクはありません</span>';
+  }
+
+  if (todoData.doneTasks.length > 0) {
+    html += '<div class="todo-section-title">完了（直近' + todoData.doneTasks.length + '件）</div>';
+    todoData.doneTasks.forEach(function(t) {
+      html += '<div class="todo-item" style="opacity:0.5">';
+      html += '<input type="checkbox" checked disabled>';
+      html += '<span class="todo-text" style="text-decoration:line-through">' + escapeHtml(t.text) + '</span>';
+      if (t.doneDate) html += '<span class="todo-due">' + escapeHtml(t.doneDate) + '</span>';
+      html += '</div>';
+    });
+  }
+
+  body.innerHTML = html;
+}
+
+async function showTodo() {
+  document.getElementById('todoModal').style.display = 'flex';
+  var body = document.getElementById('todoBody');
+  body.innerHTML = '<span class="status">読み込み中...</span>';
+  try {
+    var res = await fetch(
+      API + '/repos/' + OWNER + '/' + REPO + '/contents/notes/todo.md',
+      { headers: headers() }
+    );
+    if (res.status === 401) { showPatExpired(); throw new Error('PATの期限が切れています'); }
+    if (res.status === 404) {
+      // ファイルがまだない場合
+      todoData = { content: '', sha: '', dueTasks: [], anyTimeTasks: [], doneTasks: [] };
+      renderTodoList();
+      return;
+    }
+    if (!res.ok) throw new Error(res.status);
+    var data = await res.json();
+    todoData.content = decodeURIComponent(escape(atob(data.content)));
+    todoData.sha = data.sha;
+    var parsed = parseTodoItems(todoData.content);
+    todoData.dueTasks = parsed.due;
+    todoData.anyTimeTasks = parsed.anyTime;
+    todoData.doneTasks = parsed.done;
+    renderTodoList();
+  } catch (e) {
+    body.innerHTML = '<span class="status error">読み込みエラー: ' + escapeHtml(e.message) + '</span>';
+  }
+}
+
+function closeTodo() {
+  document.getElementById('todoModal').style.display = 'none';
+}
+
+async function saveTodoFile() {
+  var content = buildTodoContent();
+  var encoded = btoa(unescape(encodeURIComponent(content)));
+  var body = { message: 'update: todo.md', content: encoded };
+  if (todoData.sha) body.sha = todoData.sha;
+  var res = await fetch(
+    API + '/repos/' + OWNER + '/' + REPO + '/contents/notes/todo.md',
+    { method: 'PUT', headers: headers(), body: JSON.stringify(body) }
+  );
+  if (res.status === 401) { showPatExpired(); throw new Error('PATの期限が切れています'); }
+  if (!res.ok) {
+    var err = await res.json();
+    throw new Error(err.message || res.status);
+  }
+  var result = await res.json();
+  todoData.sha = result.content.sha;
+  todoData.content = content;
+}
+
+async function completeTodo(section, idx) {
+  var task;
+  if (section === 'due') {
+    task = todoData.dueTasks.splice(idx, 1)[0];
+  } else {
+    task = todoData.anyTimeTasks.splice(idx, 1)[0];
+  }
+  task.checked = true;
+  task.doneDate = todayStr();
+  todoData.doneTasks.unshift(task);
+  renderTodoList();
+  try {
+    await saveTodoFile();
+  } catch (e) {
+    alert('保存失敗: ' + e.message);
+    showTodo(); // リロード
+  }
+}
+
+async function addTodo() {
+  var textEl = document.getElementById('todoNewText');
+  var dueEl = document.getElementById('todoNewDue');
+  var text = textEl.value.trim();
+  if (!text) return;
+  var due = dueEl.value;
+  var task = { text: text, due: due, doneDate: '', checked: false };
+  if (due) {
+    todoData.dueTasks.push(task);
+    // 期限順にソート
+    todoData.dueTasks.sort(function(a, b) { return (a.due || '9999') < (b.due || '9999') ? -1 : 1; });
+  } else {
+    todoData.anyTimeTasks.push(task);
+  }
+  renderTodoList();
+  textEl.value = '';
+  dueEl.value = '';
+  try {
+    await saveTodoFile();
+  } catch (e) {
+    alert('保存失敗: ' + e.message);
+    showTodo();
+  }
 }
 
 // --- メモ投稿 ---
