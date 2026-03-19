@@ -78,6 +78,38 @@
     resize: vertical;
   }
   textarea::placeholder { color: #484f58; }
+  /* 入力モード切替 */
+  .mode-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 12px;
+  }
+  .mode-tab {
+    flex: 1;
+    padding: 8px 0;
+    text-align: center;
+    font-size: 14px;
+    border: 1px solid #30363d;
+    background: #0d1117;
+    color: #8b949e;
+    cursor: pointer;
+  }
+  .mode-tab:first-child { border-radius: 6px 0 0 6px; }
+  .mode-tab:last-child { border-radius: 0 6px 6px 0; }
+  .mode-tab.active {
+    background: #21262d;
+    color: #e6edf3;
+    border-color: #58a6ff;
+  }
+  .x-post-fields textarea { height: 20vh; }
+  .x-post-fields textarea + textarea { height: 10vh; margin-top: 8px; }
+  .x-post-fields .field-label {
+    font-size: 0.8em;
+    color: #8b949e;
+    margin-bottom: 4px;
+    margin-top: 8px;
+  }
+  .x-post-fields .field-label:first-child { margin-top: 0; }
   .memo-status {
     margin-top: 8px;
     font-size: 0.85em;
@@ -353,7 +385,21 @@
 <!-- メモ入力 -->
 <div class="card">
   <h2>メモ投稿</h2>
-  <textarea id="memo" placeholder="メモ内容"></textarea>
+  <div class="mode-tabs">
+    <button class="mode-tab active" onclick="switchMode('memo')">メモ</button>
+    <button class="mode-tab" onclick="switchMode('xpost')">Xポスト</button>
+  </div>
+  <!-- 通常メモモード -->
+  <div id="memoMode">
+    <textarea id="memo" placeholder="メモ内容"></textarea>
+  </div>
+  <!-- Xポストモード -->
+  <div id="xpostMode" style="display:none" class="x-post-fields">
+    <div class="field-label">ポスト内容（コピペ）</div>
+    <textarea id="xpostQuote" placeholder="Xのポスト内容を貼り付け"></textarea>
+    <div class="field-label">自分のメモ（任意）</div>
+    <textarea id="xpostMemo" placeholder="感想・気になった点など"></textarea>
+  </div>
   <div class="memo-actions">
     <button class="btn btn-primary" id="submitBtn" onclick="submitMemo()">投稿</button>
   </div>
@@ -438,6 +484,18 @@
 const OWNER = 'kinokooya';
 const REPO = 'knowledge-base';
 const API = 'https://api.github.com';
+
+// --- 入力モード切替 ---
+var currentMode = 'memo';
+
+function switchMode(mode) {
+  currentMode = mode;
+  document.getElementById('memoMode').style.display = mode === 'memo' ? 'block' : 'none';
+  document.getElementById('xpostMode').style.display = mode === 'xpost' ? 'block' : 'none';
+  var tabs = document.querySelectorAll('.mode-tab');
+  tabs[0].className = 'mode-tab' + (mode === 'memo' ? ' active' : '');
+  tabs[1].className = 'mode-tab' + (mode === 'xpost' ? ' active' : '');
+}
 
 function getToken() {
   return localStorage.getItem('gh_pat') || '';
@@ -913,13 +971,27 @@ function submitMemo() {
     showMemoStatus('先にPATを設定してください', 'error');
     return;
   }
-  var memo = document.getElementById('memo').value.trim();
-  if (!memo) {
-    showMemoStatus('メモを入力してください', 'error');
-    return;
-  }
 
-  var fullMemo = memo;
+  var fullMemo;
+  if (currentMode === 'xpost') {
+    var quote = document.getElementById('xpostQuote').value.trim();
+    if (!quote) {
+      showMemoStatus('ポスト内容を入力してください', 'error');
+      return;
+    }
+    var userMemo = document.getElementById('xpostMemo').value.trim();
+    fullMemo = '---\ntype: x_post\n---\n\n## 引用\n\n' + quote;
+    if (userMemo) {
+      fullMemo += '\n\n## メモ\n\n' + userMemo;
+    }
+  } else {
+    var memo = document.getElementById('memo').value.trim();
+    if (!memo) {
+      showMemoStatus('メモを入力してください', 'error');
+      return;
+    }
+    fullMemo = memo;
+  }
   var btn = document.getElementById('submitBtn');
   btn.disabled = true;
   btn.textContent = '送信中...';
@@ -958,6 +1030,8 @@ function submitMemo() {
     if (res.status === 201) {
       showMemoStatus('投稿成功: inbox/' + ts + '.md', 'success');
       document.getElementById('memo').value = '';
+      document.getElementById('xpostQuote').value = '';
+      document.getElementById('xpostMemo').value = '';
       fetchInboxCount();
     } else {
       return res.json().then(function(err) {
