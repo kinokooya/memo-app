@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>knowledge-base メモ</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    padding: 16px;
+    min-height: 100vh;
+  }
+  h1 { font-size: 18px; margin-bottom: 16px; color: #82b1ff; }
+  textarea {
+    width: 100%;
+    height: 40vh;
+    background: #16213e;
+    color: #e0e0e0;
+    border: 1px solid #0f3460;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 16px;
+    resize: vertical;
+  }
+  textarea::placeholder { color: #666; }
+  button {
+    width: 100%;
+    padding: 14px;
+    margin-top: 12px;
+    font-size: 16px;
+    font-weight: bold;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  #submit {
+    background: #0f3460;
+    color: #82b1ff;
+  }
+  #submit:active { background: #1a4a8a; }
+  #submit:disabled {
+    background: #333;
+    color: #666;
+  }
+  #status {
+    margin-top: 12px;
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 14px;
+    display: none;
+  }
+  .success { background: #1b4332; color: #95d5b2; display: block !important; }
+  .error { background: #4a1520; color: #f5a0a0; display: block !important; }
+  .info { background: #16213e; color: #82b1ff; display: block !important; }
+  .setup { margin-bottom: 16px; }
+  .setup input {
+    width: 100%;
+    padding: 10px;
+    background: #16213e;
+    color: #e0e0e0;
+    border: 1px solid #0f3460;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-top: 4px;
+  }
+  .setup label { font-size: 13px; color: #999; }
+  #token-section { margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<!-- トークン設定（初回のみ） -->
+<div id="token-section">
+  <div class="setup">
+    <label>GitHub Token（端末に保存、サーバー送信なし）</label>
+    <input type="password" id="token" placeholder="ghp_xxxxxxxx">
+  </div>
+  <button id="save-token" onclick="saveToken()" style="background:#0f3460;color:#82b1ff;margin-bottom:16px;">トークンを保存</button>
+</div>
+
+<h1>knowledge-base メモ</h1>
+<textarea id="memo" placeholder="#domain:&#10;#type:&#10;&#10;メモ内容"></textarea>
+<button id="submit" onclick="send()">投稿</button>
+<div id="status"></div>
+
+<script>
+// トークンをlocalStorageに保存（端末内のみ）
+function saveToken() {
+  var t = document.getElementById('token').value.trim();
+  if (!t) return;
+  localStorage.setItem('kb_token', t);
+  showStatus('トークンを保存しました', 'success');
+  hideTokenSection();
+}
+
+function hideTokenSection() {
+  document.getElementById('token-section').style.display = 'none';
+}
+
+// 起動時にトークンがあれば入力欄を隠す
+(function() {
+  if (localStorage.getItem('kb_token')) {
+    hideTokenSection();
+  }
+})();
+
+function showStatus(msg, type) {
+  var el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = type;
+}
+
+function send() {
+  var token = localStorage.getItem('kb_token');
+  if (!token) {
+    showStatus('先にトークンを保存してください', 'error');
+    return;
+  }
+
+  var memo = document.getElementById('memo').value.trim();
+  if (!memo) {
+    showStatus('メモを入力してください', 'error');
+    return;
+  }
+
+  var btn = document.getElementById('submit');
+  btn.disabled = true;
+  btn.textContent = '送信中...';
+  showStatus('送信中...', 'info');
+
+  // タイムスタンプ生成
+  var now = new Date();
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  var ts = now.getFullYear() + '-'
+    + pad(now.getMonth()+1) + '-'
+    + pad(now.getDate()) + '-'
+    + pad(now.getHours())
+    + pad(now.getMinutes())
+    + pad(now.getSeconds());
+
+  // Base64エンコード（日本語対応）
+  var encoded = btoa(unescape(encodeURIComponent(memo)));
+
+  var url = 'https://api.github.com/repos/kinokooya/knowledge-base/contents/inbox/' + ts + '.md';
+
+  fetch(url, {
+    method: 'PUT',
+    headers: {
+      'Authorization': 'token ' + token,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      message: 'add: inbox from Android',
+      content: encoded
+    })
+  })
+  .then(function(res) {
+    if (res.status === 201) {
+      showStatus('投稿成功: inbox/' + ts + '.md', 'success');
+      document.getElementById('memo').value = '';
+    } else {
+      return res.json().then(function(err) {
+        showStatus('エラー ' + res.status + ': ' + err.message, 'error');
+      });
+    }
+  })
+  .catch(function(e) {
+    showStatus('通信エラー: ' + e.message, 'error');
+  })
+  .finally(function() {
+    btn.disabled = false;
+    btn.textContent = '投稿';
+  });
+}
+</script>
+
+</body>
+</html>
