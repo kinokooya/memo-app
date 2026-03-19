@@ -31,7 +31,6 @@
     color: #e6edf3;
     font-size: 14px;
     cursor: pointer;
-    text-decoration: none;
   }
   .btn:active { background: #30363d; }
   .btn-primary {
@@ -65,6 +64,60 @@
     margin-bottom: 12px;
     color: #8b949e;
   }
+
+  /* メモ入力 */
+  textarea {
+    width: 100%;
+    height: 30vh;
+    background: #0d1117;
+    color: #e6edf3;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 16px;
+    resize: vertical;
+  }
+  textarea::placeholder { color: #484f58; }
+  select {
+    width: 100%;
+    padding: 10px;
+    background: #0d1117;
+    color: #e6edf3;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    font-size: 16px;
+    margin-bottom: 12px;
+  }
+  #newDomainInput {
+    width: 100%;
+    padding: 10px;
+    background: #0d1117;
+    color: #e6edf3;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    font-size: 14px;
+    margin-bottom: 12px;
+    display: none;
+  }
+  #newDomainInput::placeholder { color: #484f58; }
+  .memo-status {
+    margin-top: 8px;
+    font-size: 0.85em;
+    padding: 8px;
+    border-radius: 6px;
+    display: none;
+  }
+  .memo-status.success { background: #1b4332; color: #95d5b2; display: block; }
+  .memo-status.error { background: #4a1520; color: #f5a0a0; display: block; }
+  .memo-status.info { background: #0d1117; color: #58a6ff; display: block; }
+  .memo-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .memo-actions .btn { flex: 1; text-align: center; }
+
+  /* Inbox */
   .inbox-count {
     font-size: 2em;
     font-weight: bold;
@@ -76,6 +129,9 @@
     justify-content: space-between;
     gap: 12px;
   }
+  .workflow-status { margin-top: 8px; }
+
+  /* PR */
   .pr-item {
     border-bottom: 1px solid #21262d;
     padding: 12px 0;
@@ -110,6 +166,8 @@
   }
   .status.success { color: #3fb950; }
   .status.error { color: #f85149; }
+
+  /* モーダル */
   .modal-overlay {
     position: fixed;
     inset: 0;
@@ -149,10 +207,6 @@
     justify-content: flex-end;
     margin-top: 12px;
   }
-  .loading { opacity: 0.5; }
-  .workflow-status {
-    margin-top: 8px;
-  }
 </style>
 </head>
 <body>
@@ -162,6 +216,21 @@
   <button class="btn btn-sm" onclick="showTokenModal()">PAT設定</button>
 </header>
 
+<!-- メモ入力 -->
+<div class="card">
+  <h2>メモ投稿</h2>
+  <select id="domain" onchange="onDomainChange()">
+    <option value="">読み込み中...</option>
+  </select>
+  <input type="text" id="newDomainInput" placeholder="新しいドメイン名を入力">
+  <textarea id="memo" placeholder="メモ内容"></textarea>
+  <div class="memo-actions">
+    <button class="btn btn-primary" id="submitBtn" onclick="submitMemo()">投稿</button>
+  </div>
+  <div class="memo-status" id="memoStatus"></div>
+</div>
+
+<!-- Inbox管理 -->
 <div class="card">
   <h2>Inbox</h2>
   <div class="inbox-row">
@@ -176,6 +245,7 @@
   <div class="workflow-status" id="workflowStatus"></div>
 </div>
 
+<!-- オープンPR -->
 <div class="card">
   <h2>オープンPR</h2>
   <div id="prList"><span class="status">読み込み中...</span></div>
@@ -207,7 +277,7 @@ function getToken() {
 
 function headers() {
   return {
-    'Authorization': `Bearer ${getToken()}`,
+    'Authorization': 'Bearer ' + getToken(),
     'Accept': 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28'
   };
@@ -224,22 +294,155 @@ function closeTokenModal() {
 }
 
 function saveToken() {
-  const token = document.getElementById('tokenInput').value.trim();
+  var token = document.getElementById('tokenInput').value.trim();
   if (!token) return;
   localStorage.setItem('gh_pat', token);
   closeTokenModal();
-  refresh();
+  init();
+}
+
+// --- ドメイン読み込み ---
+function loadDomains() {
+  var url = API + '/repos/' + OWNER + '/' + REPO + '/contents/context/domain-index.md';
+  fetch(url, { headers: headers() })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      var content = decodeURIComponent(escape(atob(data.content.replace(/\n/g, ''))));
+      var domains = parseDomains(content);
+      populateDropdown(domains);
+    })
+    .catch(function() {
+      document.getElementById('domain').innerHTML = '<option value="">取得失敗</option>';
+    });
+}
+
+function parseDomains(md) {
+  var lines = md.split('\n');
+  var domains = [];
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (line.startsWith('|') && !line.startsWith('|---') && !line.startsWith('| ドメイン')) {
+      var cols = line.split('|').map(function(c) { return c.trim(); });
+      if (cols[1] && cols[1] !== '' && cols[1] !== 'ドメイン') {
+        domains.push(cols[1]);
+      }
+    }
+  }
+  return domains;
+}
+
+function populateDropdown(domains) {
+  var sel = document.getElementById('domain');
+  sel.innerHTML = '';
+  for (var i = 0; i < domains.length; i++) {
+    var opt = document.createElement('option');
+    opt.value = domains[i];
+    opt.textContent = domains[i];
+    sel.appendChild(opt);
+  }
+  var newOpt = document.createElement('option');
+  newOpt.value = '__new__';
+  newOpt.textContent = '+ 新規ドメイン';
+  sel.appendChild(newOpt);
+}
+
+function onDomainChange() {
+  var sel = document.getElementById('domain');
+  document.getElementById('newDomainInput').style.display =
+    (sel.value === '__new__') ? 'block' : 'none';
+}
+
+function getSelectedDomain() {
+  var sel = document.getElementById('domain');
+  if (sel.value === '__new__') {
+    return document.getElementById('newDomainInput').value.trim();
+  }
+  return sel.value;
+}
+
+// --- メモ投稿 ---
+function showMemoStatus(msg, type) {
+  var el = document.getElementById('memoStatus');
+  el.textContent = msg;
+  el.className = 'memo-status ' + type;
+}
+
+function submitMemo() {
+  var token = getToken();
+  if (!token) {
+    showMemoStatus('先にPATを設定してください', 'error');
+    return;
+  }
+  var memo = document.getElementById('memo').value.trim();
+  if (!memo) {
+    showMemoStatus('メモを入力してください', 'error');
+    return;
+  }
+  var domain = getSelectedDomain();
+  if (!domain) {
+    showMemoStatus('ドメインを選択してください', 'error');
+    return;
+  }
+
+  var fullMemo = '#domain:' + domain + '\n\n' + memo;
+  var btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = '送信中...';
+  showMemoStatus('送信中...', 'info');
+
+  var now = new Date();
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  var ts = now.getFullYear() + '-'
+    + pad(now.getMonth()+1) + '-'
+    + pad(now.getDate()) + '-'
+    + pad(now.getHours())
+    + pad(now.getMinutes())
+    + pad(now.getSeconds());
+
+  var encoded = btoa(unescape(encodeURIComponent(fullMemo)));
+  var url = API + '/repos/' + OWNER + '/' + REPO + '/contents/inbox/' + ts + '.md';
+
+  fetch(url, {
+    method: 'PUT',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json',
+      'X-GitHub-Api-Version': '2022-11-28'
+    },
+    body: JSON.stringify({
+      message: 'add: inbox from mobile',
+      content: encoded
+    })
+  })
+  .then(function(res) {
+    if (res.status === 201) {
+      showMemoStatus('投稿成功: inbox/' + ts + '.md [' + domain + ']', 'success');
+      document.getElementById('memo').value = '';
+      fetchInboxCount();
+    } else {
+      return res.json().then(function(err) {
+        showMemoStatus('エラー ' + res.status + ': ' + err.message, 'error');
+      });
+    }
+  })
+  .catch(function(e) {
+    showMemoStatus('通信エラー: ' + e.message, 'error');
+  })
+  .finally(function() {
+    btn.disabled = false;
+    btn.textContent = '投稿';
+  });
 }
 
 // --- inbox件数取得 ---
 async function fetchInboxCount() {
-  const el = document.getElementById('inboxCount');
-  const btn = document.getElementById('processBtn');
+  var el = document.getElementById('inboxCount');
+  var btn = document.getElementById('processBtn');
   try {
-    const res = await fetch(`${API}/repos/${OWNER}/${REPO}/contents/inbox`, { headers: headers() });
+    var res = await fetch(API + '/repos/' + OWNER + '/' + REPO + '/contents/inbox', { headers: headers() });
     if (!res.ok) throw new Error(res.status);
-    const files = await res.json();
-    const mdFiles = files.filter(f => f.name.endsWith('.md') && f.name !== '.gitkeep');
+    var files = await res.json();
+    var mdFiles = files.filter(function(f) { return f.name.endsWith('.md') && f.name !== '.gitkeep'; });
     el.textContent = mdFiles.length;
     btn.disabled = mdFiles.length === 0;
   } catch (e) {
@@ -251,15 +454,15 @@ async function fetchInboxCount() {
 
 // --- inbox処理トリガー ---
 async function triggerProcess() {
-  const btn = document.getElementById('processBtn');
-  const status = document.getElementById('workflowStatus');
+  var btn = document.getElementById('processBtn');
+  var status = document.getElementById('workflowStatus');
   btn.disabled = true;
   btn.textContent = '起動中...';
   status.innerHTML = '';
 
   try {
-    const res = await fetch(
-      `${API}/repos/${OWNER}/${REPO}/actions/workflows/inbox-process.yml/dispatches`,
+    var res = await fetch(
+      API + '/repos/' + OWNER + '/' + REPO + '/actions/workflows/inbox-process.yml/dispatches',
       {
         method: 'POST',
         headers: headers(),
@@ -267,29 +470,28 @@ async function triggerProcess() {
       }
     );
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`${res.status}: ${text}`);
+      var text = await res.text();
+      throw new Error(res.status + ': ' + text);
     }
     status.innerHTML = '<span class="status success">ワークフローを起動しました。PRが作成されるまでお待ちください。</span>';
     btn.textContent = 'inbox処理';
-    // PRが作成されるまでポーリング
     startPolling();
   } catch (e) {
-    status.innerHTML = `<span class="status error">エラー: ${e.message}</span>`;
+    status.innerHTML = '<span class="status error">エラー: ' + escapeHtml(e.message) + '</span>';
     btn.textContent = 'inbox処理';
     btn.disabled = false;
   }
 }
 
-// --- ポーリング（ワークフロー完了待ち） ---
-let pollTimer = null;
+// --- ポーリング ---
+var pollTimer = null;
 function startPolling() {
-  let count = 0;
+  var count = 0;
   if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(async () => {
+  pollTimer = setInterval(async function() {
     count++;
     await fetchPRs();
-    if (count >= 30) { // 最大5分（10秒×30）
+    if (count >= 30) {
       clearInterval(pollTimer);
       pollTimer = null;
       document.getElementById('processBtn').disabled = false;
@@ -299,39 +501,36 @@ function startPolling() {
 
 // --- PR一覧取得 ---
 async function fetchPRs() {
-  const el = document.getElementById('prList');
+  var el = document.getElementById('prList');
   try {
-    const res = await fetch(
-      `${API}/repos/${OWNER}/${REPO}/pulls?state=open&sort=created&direction=desc&per_page=10`,
+    var res = await fetch(
+      API + '/repos/' + OWNER + '/' + REPO + '/pulls?state=open&sort=created&direction=desc&per_page=10',
       { headers: headers() }
     );
     if (!res.ok) throw new Error(res.status);
-    const prs = await res.json();
-
-    // inbox-process ブランチのPRのみフィルタ
-    const inboxPRs = prs.filter(pr => pr.head.ref.startsWith('inbox-process/'));
+    var prs = await res.json();
+    var inboxPRs = prs.filter(function(pr) { return pr.head.ref.startsWith('inbox-process/'); });
 
     if (inboxPRs.length === 0) {
       el.innerHTML = '<span class="status">inbox処理のオープンPRはありません</span>';
       return;
     }
 
-    el.innerHTML = inboxPRs.map(pr => `
-      <div class="pr-item">
-        <div class="pr-title">#${pr.number} ${escapeHtml(pr.title)}</div>
-        <div class="pr-body">${renderPRBody(pr.body || '')}</div>
-        <button class="btn btn-merge" onclick="mergePR(${pr.number}, this)">マージ</button>
-      </div>
-    `).join('');
+    el.innerHTML = inboxPRs.map(function(pr) {
+      return '<div class="pr-item">' +
+        '<div class="pr-title">#' + pr.number + ' ' + escapeHtml(pr.title) + '</div>' +
+        '<div class="pr-body">' + renderPRBody(pr.body || '') + '</div>' +
+        '<button class="btn btn-merge" onclick="mergePR(' + pr.number + ', this)">マージ</button>' +
+        '</div>';
+    }).join('');
 
-    // PRが見つかったらポーリング停止 & 処理ボタン復帰
     if (inboxPRs.length > 0 && pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;
       document.getElementById('processBtn').disabled = false;
     }
   } catch (e) {
-    el.innerHTML = `<span class="status error">PR取得エラー: ${e.message}</span>`;
+    el.innerHTML = '<span class="status error">PR取得エラー: ' + escapeHtml(e.message) + '</span>';
   }
 }
 
@@ -340,8 +539,8 @@ async function mergePR(prNumber, btnEl) {
   btnEl.disabled = true;
   btnEl.textContent = 'マージ中...';
   try {
-    const res = await fetch(
-      `${API}/repos/${OWNER}/${REPO}/pulls/${prNumber}/merge`,
+    var res = await fetch(
+      API + '/repos/' + OWNER + '/' + REPO + '/pulls/' + prNumber + '/merge',
       {
         method: 'PUT',
         headers: headers(),
@@ -349,57 +548,49 @@ async function mergePR(prNumber, btnEl) {
       }
     );
     if (!res.ok) {
-      const data = await res.json();
+      var data = await res.json();
       throw new Error(data.message || res.status);
     }
     btnEl.textContent = 'マージ完了';
     btnEl.style.background = '#3fb950';
-    // リフレッシュ
     setTimeout(refresh, 1500);
   } catch (e) {
     btnEl.textContent = 'エラー';
     btnEl.style.background = '#f85149';
-    alert(`マージ失敗: ${e.message}`);
+    alert('マージ失敗: ' + e.message);
   }
 }
 
 // --- ユーティリティ ---
 function escapeHtml(str) {
-  const d = document.createElement('div');
+  var d = document.createElement('div');
   d.textContent = str;
   return d.innerHTML;
 }
 
 function renderPRBody(body) {
-  // マークダウンテーブルを簡易HTMLに変換
-  const lines = body.split('\n');
-  let html = '';
-  let inTable = false;
-  let isHeaderRow = true;
+  var lines = body.split('\n');
+  var html = '';
+  var inTable = false;
+  var isHeaderRow = true;
 
-  for (const line of lines) {
-    const trimmed = line.trim();
+  for (var idx = 0; idx < lines.length; idx++) {
+    var trimmed = lines[idx].trim();
     if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
-      // テーブル区切り行はスキップ
-      if (trimmed.match(/^\|[\s-|]+\|$/)) {
-        continue;
-      }
+      if (trimmed.match(/^\|[\s\-|]+\|$/)) continue;
       if (!inTable) {
         html += '<table>';
         inTable = true;
         isHeaderRow = true;
       }
-      const cells = trimmed.split('|').filter((_, i, a) => i > 0 && i < a.length - 1);
-      const tag = isHeaderRow ? 'th' : 'td';
-      html += '<tr>' + cells.map(c => `<${tag}>${escapeHtml(c.trim())}</${tag}>`).join('') + '</tr>';
+      var cells = trimmed.split('|').filter(function(_, i, a) { return i > 0 && i < a.length - 1; });
+      var tag = isHeaderRow ? 'th' : 'td';
+      html += '<tr>' + cells.map(function(c) { return '<' + tag + '>' + escapeHtml(c.trim()) + '</' + tag + '>'; }).join('') + '</tr>';
       isHeaderRow = false;
     } else {
-      if (inTable) {
-        html += '</table>';
-        inTable = false;
-      }
+      if (inTable) { html += '</table>'; inTable = false; }
       if (trimmed.startsWith('## ')) {
-        html += `<strong>${escapeHtml(trimmed.slice(3))}</strong><br>`;
+        html += '<strong>' + escapeHtml(trimmed.slice(3)) + '</strong><br>';
       } else if (trimmed) {
         html += escapeHtml(trimmed) + '<br>';
       }
@@ -413,14 +604,18 @@ async function refresh() {
   await Promise.all([fetchInboxCount(), fetchPRs()]);
 }
 
+function init() {
+  loadDomains();
+  refresh();
+}
+
 // --- 初期化 ---
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function() {
   if (!getToken()) {
     showTokenModal();
   } else {
-    refresh();
+    init();
   }
-  // 60秒ごとに自動リフレッシュ
   setInterval(refresh, 60000);
 });
 </script>
