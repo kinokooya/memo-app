@@ -68,6 +68,31 @@
   }
   .setup label { font-size: 13px; color: #999; }
   #token-section { margin-bottom: 16px; }
+  /* ドメイン選択 */
+  select {
+    width: 100%;
+    padding: 10px;
+    background: #16213e;
+    color: #e0e0e0;
+    border: 1px solid #0f3460;
+    border-radius: 8px;
+    font-size: 16px;
+    margin-bottom: 12px;
+    appearance: auto;
+  }
+  #new-domain-input {
+    width: 100%;
+    padding: 10px;
+    background: #16213e;
+    color: #e0e0e0;
+    border: 1px solid #0f3460;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 12px;
+    display: none;
+  }
+  #new-domain-input::placeholder { color: #666; }
+  .domain-label { font-size: 13px; color: #999; margin-bottom: 4px; }
 </style>
 </head>
 <body>
@@ -82,7 +107,15 @@
 </div>
 
 <h1>knowledge-base メモ</h1>
-<textarea id="memo" placeholder="#domain:&#10;#type:&#10;&#10;メモ内容"></textarea>
+
+<!-- ドメイン選択 -->
+<div class="domain-label">ドメイン</div>
+<select id="domain" onchange="onDomainChange()">
+  <option value="">読み込み中...</option>
+</select>
+<input type="text" id="new-domain-input" placeholder="新しいドメイン名を入力">
+
+<textarea id="memo" placeholder="メモ内容"></textarea>
 <button id="submit" onclick="send()">投稿</button>
 <div id="status"></div>
 
@@ -94,18 +127,90 @@ function saveToken() {
   localStorage.setItem('kb_token', t);
   showStatus('トークンを保存しました', 'success');
   hideTokenSection();
+  loadDomains();
 }
 
 function hideTokenSection() {
   document.getElementById('token-section').style.display = 'none';
 }
 
-// 起動時にトークンがあれば入力欄を隠す
+// 起動時にトークンがあれば入力欄を隠してドメイン一覧を取得
 (function() {
   if (localStorage.getItem('kb_token')) {
     hideTokenSection();
+    loadDomains();
   }
 })();
+
+// GitHub APIからdomain-index.mdを取得してドロップダウンに反映
+function loadDomains() {
+  var token = localStorage.getItem('kb_token');
+  if (!token) return;
+
+  var url = 'https://api.github.com/repos/kinokooya/knowledge-base/contents/context/domain-index.md';
+  fetch(url, {
+    headers: { 'Authorization': 'token ' + token }
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    // Base64デコード（日本語対応）
+    var content = decodeURIComponent(escape(atob(data.content.replace(/\n/g, ''))));
+    var domains = parseDomains(content);
+    populateDropdown(domains);
+  })
+  .catch(function(e) {
+    var sel = document.getElementById('domain');
+    sel.innerHTML = '<option value="">取得失敗</option>';
+  });
+}
+
+// domain-index.mdのテーブルからドメイン名を抽出
+function parseDomains(md) {
+  var lines = md.split('\n');
+  var domains = [];
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    // テーブル行: | domain | 説明 | ... |
+    if (line.startsWith('|') && !line.startsWith('|---') && !line.startsWith('| ドメイン')) {
+      var cols = line.split('|').map(function(c) { return c.trim(); });
+      // cols[0]は空、cols[1]がドメイン名
+      if (cols[1] && cols[1] !== '' && cols[1] !== 'ドメイン') {
+        domains.push(cols[1]);
+      }
+    }
+  }
+  return domains;
+}
+
+function populateDropdown(domains) {
+  var sel = document.getElementById('domain');
+  sel.innerHTML = '';
+  for (var i = 0; i < domains.length; i++) {
+    var opt = document.createElement('option');
+    opt.value = domains[i];
+    opt.textContent = domains[i];
+    sel.appendChild(opt);
+  }
+  // 「新規ドメイン」オプション
+  var newOpt = document.createElement('option');
+  newOpt.value = '__new__';
+  newOpt.textContent = '+ 新規ドメイン';
+  sel.appendChild(newOpt);
+}
+
+function onDomainChange() {
+  var sel = document.getElementById('domain');
+  var input = document.getElementById('new-domain-input');
+  input.style.display = (sel.value === '__new__') ? 'block' : 'none';
+}
+
+function getSelectedDomain() {
+  var sel = document.getElementById('domain');
+  if (sel.value === '__new__') {
+    return document.getElementById('new-domain-input').value.trim();
+  }
+  return sel.value;
+}
 
 function showStatus(msg, type) {
   var el = document.getElementById('status');
@@ -126,6 +231,15 @@ function send() {
     return;
   }
 
+  var domain = getSelectedDomain();
+  if (!domain) {
+    showStatus('ドメインを選択してください', 'error');
+    return;
+  }
+
+  // メモの先頭にドメインタグを付与
+  var fullMemo = '#domain:' + domain + '\n\n' + memo;
+
   var btn = document.getElementById('submit');
   btn.disabled = true;
   btn.textContent = '送信中...';
@@ -142,7 +256,7 @@ function send() {
     + pad(now.getSeconds());
 
   // Base64エンコード（日本語対応）
-  var encoded = btoa(unescape(encodeURIComponent(memo)));
+  var encoded = btoa(unescape(encodeURIComponent(fullMemo)));
 
   var url = 'https://api.github.com/repos/kinokooya/knowledge-base/contents/inbox/' + ts + '.md';
 
@@ -159,7 +273,7 @@ function send() {
   })
   .then(function(res) {
     if (res.status === 201) {
-      showStatus('投稿成功: inbox/' + ts + '.md', 'success');
+      showStatus('投稿成功: inbox/' + ts + '.md [' + domain + ']', 'success');
       document.getElementById('memo').value = '';
     } else {
       return res.json().then(function(err) {
