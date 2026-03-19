@@ -163,6 +163,23 @@
     width: 90%;
     max-width: 400px;
   }
+  /* PAT期限切れバナー */
+  .pat-expired-banner {
+    background: #4a1520;
+    border: 1px solid #f85149;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .pat-expired-banner span {
+    color: #f5a0a0;
+    font-size: 0.9em;
+  }
+
   .modal h2 { margin-bottom: 12px; }
   .modal input {
     width: 100%;
@@ -193,6 +210,12 @@
   <h1>Knowledge Base</h1>
   <button class="btn btn-sm" onclick="showTokenModal()">PAT設定</button>
 </header>
+
+<!-- PAT期限切れバナー -->
+<div class="pat-expired-banner" id="patExpiredBanner" style="display:none">
+  <span>PATの期限が切れています。再設定してください。</span>
+  <button class="btn btn-sm" style="background:#f85149;border-color:#f85149;white-space:nowrap" onclick="showTokenModal()">再設定</button>
+</div>
 
 <!-- メモ入力 -->
 <div class="card">
@@ -257,6 +280,15 @@ function headers() {
   };
 }
 
+// --- PAT期限切れ通知 ---
+function showPatExpired() {
+  document.getElementById('patExpiredBanner').style.display = 'flex';
+}
+
+function hidePatExpired() {
+  document.getElementById('patExpiredBanner').style.display = 'none';
+}
+
 // --- PAT管理 ---
 function showTokenModal() {
   document.getElementById('tokenModal').style.display = 'flex';
@@ -272,6 +304,7 @@ function saveToken() {
   if (!token) return;
   localStorage.setItem('gh_pat', token);
   closeTokenModal();
+  hidePatExpired();
   init();
 }
 
@@ -325,6 +358,11 @@ function submitMemo() {
     })
   })
   .then(function(res) {
+    if (res.status === 401) {
+      showPatExpired();
+      showMemoStatus('PATの期限が切れています', 'error');
+      return;
+    }
     if (res.status === 201) {
       showMemoStatus('投稿成功: inbox/' + ts + '.md', 'success');
       document.getElementById('memo').value = '';
@@ -358,7 +396,7 @@ async function fetchInboxCount() {
   } catch (e) {
     el.textContent = '?';
     btn.disabled = true;
-    if (e.message === '401') showTokenModal();
+    if (e.message === '401') showPatExpired();
   }
 }
 
@@ -379,6 +417,13 @@ async function triggerProcess() {
         body: JSON.stringify({ ref: 'main' })
       }
     );
+    if (res.status === 401) {
+      showPatExpired();
+      status.innerHTML = '<span class="status error">PATの期限が切れています</span>';
+      btn.textContent = 'inbox処理';
+      btn.disabled = false;
+      return;
+    }
     if (!res.ok) {
       var text = await res.text();
       throw new Error(res.status + ': ' + text);
@@ -417,6 +462,7 @@ async function fetchPRs() {
       API + '/repos/' + OWNER + '/' + REPO + '/pulls?state=open&sort=created&direction=desc&per_page=10',
       { headers: headers() }
     );
+    if (res.status === 401) { showPatExpired(); throw new Error(res.status); }
     if (!res.ok) throw new Error(res.status);
     var prs = await res.json();
     var inboxPRs = prs.filter(function(pr) { return pr.head.ref.startsWith('inbox-process/'); });
@@ -459,6 +505,7 @@ async function mergePR(prNumber, btnEl) {
         body: JSON.stringify({ merge_method: 'squash' })
       }
     );
+    if (res.status === 401) { showPatExpired(); throw new Error('PATの期限が切れています'); }
     if (!res.ok) {
       var data = await res.json();
       throw new Error(data.message || res.status);
@@ -490,6 +537,7 @@ async function closePR(prNumber, btnEl) {
         body: JSON.stringify({ state: 'closed' })
       }
     );
+    if (res.status === 401) { showPatExpired(); throw new Error('PATの期限が切れています'); }
     if (!res.ok) {
       var data = await res.json();
       throw new Error(data.message || res.status);
