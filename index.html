@@ -382,6 +382,12 @@
   <div id="prList"><span class="status">読み込み中...</span></div>
 </div>
 
+<!-- 未完了ToDo -->
+<div class="card">
+  <h2>ToDo</h2>
+  <div id="todoSummary"></div>
+</div>
+
 <!-- 後で読むモーダル -->
 <div class="modal-overlay read-later-modal" id="readLaterModal" style="display:none">
   <div class="modal">
@@ -745,6 +751,7 @@ function saveTodoToStorage() {
   // 完了タスクは直近5件のみ保持
   todoData.doneTasks = todoData.doneTasks.slice(0, 5);
   localStorage.setItem('todo_data', JSON.stringify(todoData));
+  renderTodoSummary();
 }
 
 function todayStr() {
@@ -781,6 +788,7 @@ function renderTodoList() {
       html += '<div class="todo-item">';
       html += '<input type="checkbox" onchange="completeTodo(\'anytime\',' + i + ')">';
       html += '<span class="todo-text">' + escapeHtml(t.text) + '</span>';
+      if (t.createdAt) html += '<span class="todo-due">' + escapeHtml(t.createdAt) + '</span>';
       html += '<button class="btn-todo-delete" onclick="deleteTodo(\'anytime\',' + i + ')">&times;</button>';
       html += '</div>';
     });
@@ -864,7 +872,7 @@ function addTodo() {
   var text = textEl.value.trim();
   if (!text) return;
   var due = dueEl.value;
-  var task = { text: text, due: due, doneDate: '', checked: false };
+  var task = { text: text, due: due, doneDate: '', checked: false, createdAt: todayStr() };
   if (due) {
     todoData.dueTasks.push(task);
     todoData.dueTasks.sort(function(a, b) { return (a.due || '9999') < (b.due || '9999') ? -1 : 1; });
@@ -875,6 +883,26 @@ function addTodo() {
   renderTodoList();
   textEl.value = '';
   dueEl.value = '';
+}
+
+function renderTodoSummary() {
+  loadTodoFromStorage();
+  var el = document.getElementById('todoSummary');
+  var tasks = todoData.dueTasks.concat(todoData.anyTimeTasks);
+  if (tasks.length === 0) {
+    el.innerHTML = '<span class="status">未完了タスクはありません</span>';
+    return;
+  }
+  var html = '';
+  tasks.forEach(function(t) {
+    var dateStr = t.due || t.createdAt || '';
+    var overdue = isOverdue(t.due) ? ' overdue' : '';
+    html += '<div class="todo-item">';
+    html += '<span class="todo-text">' + escapeHtml(t.text) + '</span>';
+    if (dateStr) html += '<span class="todo-due' + overdue + '">' + escapeHtml(dateStr) + '</span>';
+    html += '</div>';
+  });
+  el.innerHTML = html;
 }
 
 function exportTodo() {
@@ -1206,6 +1234,7 @@ async function refresh() {
 
 async function init() {
   await migrateTodoFromGitHub();
+  renderTodoSummary();
   refresh();
 }
 
