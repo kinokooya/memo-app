@@ -97,13 +97,17 @@
   }
   .x-post-fields textarea { height: 20vh; }
   .x-post-fields textarea + textarea { height: 10vh; margin-top: 8px; }
-  .x-post-fields .field-label {
+  .x-post-fields .field-label,
+  .learning-fields .field-label {
     font-size: 0.8em;
     color: #8b949e;
     margin-bottom: 4px;
     margin-top: 8px;
   }
-  .x-post-fields .field-label:first-child { margin-top: 0; }
+  .x-post-fields .field-label:first-child,
+  .learning-fields .field-label:first-child { margin-top: 0; }
+  .learning-fields textarea { height: 8vh; }
+  .mode-tab:nth-child(2) { border-radius: 0; }
   .memo-status {
     margin-top: 8px;
     font-size: 0.85em;
@@ -341,6 +345,7 @@
   <div class="mode-tabs">
     <button class="mode-tab active" onclick="switchMode('memo')">メモ</button>
     <button class="mode-tab" onclick="switchMode('xpost')">Xポスト</button>
+    <button class="mode-tab" onclick="switchMode('learning')">学習ノート</button>
   </div>
   <!-- 通常メモモード -->
   <div id="memoMode">
@@ -354,6 +359,17 @@
     <textarea id="xpostQuote" placeholder="Xのポスト内容を貼り付け"></textarea>
     <div class="field-label">自分のメモ（任意）</div>
     <textarea id="xpostMemo" placeholder="感想・気になった点など"></textarea>
+  </div>
+  <!-- 学習ノートモード -->
+  <div id="learningMode" style="display:none" class="learning-fields">
+    <div class="field-label">やったこと（必須）</div>
+    <textarea id="learningDid" placeholder="何をしたか。1〜2行で"></textarea>
+    <div class="field-label">わかったこと（必須）</div>
+    <textarea id="learningLearned" placeholder="新しく理解したこと。箇条書きでOK"></textarea>
+    <div class="field-label">次にどう使うか（任意）</div>
+    <textarea id="learningNext" placeholder="他のプロジェクトや今後の学習にどう活かすか"></textarea>
+    <div class="field-label">つまずいたこと（任意）</div>
+    <textarea id="learningStuck" placeholder="ハマったポイント"></textarea>
   </div>
   <div class="memo-actions">
     <button class="btn btn-primary" id="submitBtn" onclick="submitMemo()">投稿</button>
@@ -427,9 +443,12 @@ function switchMode(mode) {
   currentMode = mode;
   document.getElementById('memoMode').style.display = mode === 'memo' ? 'block' : 'none';
   document.getElementById('xpostMode').style.display = mode === 'xpost' ? 'block' : 'none';
+  document.getElementById('learningMode').style.display = mode === 'learning' ? 'block' : 'none';
   var tabs = document.querySelectorAll('.mode-tab');
-  tabs[0].className = 'mode-tab' + (mode === 'memo' ? ' active' : '');
-  tabs[1].className = 'mode-tab' + (mode === 'xpost' ? ' active' : '');
+  var modes = ['memo', 'xpost', 'learning'];
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].className = 'mode-tab' + (mode === modes[i] ? ' active' : '');
+  }
 }
 
 function getToken() {
@@ -920,6 +939,22 @@ function submitMemo() {
     if (userMemo) {
       fullMemo += '\n\n## メモ\n\n' + userMemo;
     }
+  } else if (currentMode === 'learning') {
+    var did = document.getElementById('learningDid').value.trim();
+    var learned = document.getElementById('learningLearned').value.trim();
+    if (!did) {
+      showMemoStatus('「やったこと」を入力してください', 'error');
+      return;
+    }
+    if (!learned) {
+      showMemoStatus('「わかったこと」を入力してください', 'error');
+      return;
+    }
+    var next = document.getElementById('learningNext').value.trim();
+    var stuck = document.getElementById('learningStuck').value.trim();
+    fullMemo = '#learning\n\n## やったこと\n' + did + '\n\n## わかったこと\n' + learned;
+    if (next) fullMemo += '\n\n## 次にどう使うか\n' + next;
+    if (stuck) fullMemo += '\n\n## つまずいたこと\n' + stuck;
   } else {
     var memo = document.getElementById('memo').value.trim();
     if (!memo) {
@@ -969,6 +1004,10 @@ function submitMemo() {
       document.getElementById('xpostUrl').value = '';
       document.getElementById('xpostQuote').value = '';
       document.getElementById('xpostMemo').value = '';
+      document.getElementById('learningDid').value = '';
+      document.getElementById('learningLearned').value = '';
+      document.getElementById('learningNext').value = '';
+      document.getElementById('learningStuck').value = '';
     } else {
       return res.json().then(function(err) {
         showMemoStatus('エラー ' + res.status + ': ' + err.message, 'error');
