@@ -209,6 +209,10 @@
     text-decoration: none;
     word-break: break-all;
   }
+  .no-url {
+    color: #8b949e;
+    word-break: break-all;
+  }
   .read-later-item {
     border-bottom: 1px solid #21262d;
     padding: 10px 0;
@@ -525,7 +529,9 @@ function renderReadLaterList() {
   }
   body.innerHTML = readLaterData.items.map(function(item, idx) {
     var html = '<div class="read-later-item" id="rl-item-' + idx + '">';
-    html += '<a href="' + escapeHtml(item.url) + '" target="_blank" rel="noopener">' + escapeHtml(item.title || item.url) + '</a>';
+    html += item.url
+      ? '<a href="' + escapeHtml(item.url) + '" target="_blank" rel="noopener">' + escapeHtml(item.title || item.url) + '</a>'
+      : '<span class="no-url">' + escapeHtml(item.title) + '</span>';
     if (item.note) html += '<div class="note">' + escapeHtml(item.note) + '</div>';
     html += '<div class="actions">';
     html += '<button class="btn btn-done" onclick="markAsRead(' + idx + ')">読んだ</button>';
